@@ -1,3 +1,4 @@
+#![allow(clippy::all)]
 mod commands;
 mod db;
 mod diff;
