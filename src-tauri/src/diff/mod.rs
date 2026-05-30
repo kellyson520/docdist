@@ -18,7 +18,7 @@ pub struct DiffHunk {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct DiffChange {
-    pub change_type: String, // "add", "delete", "equal"
+    pub change_type: String,
     pub content: String,
     pub old_line: Option<u32>,
     pub new_line: Option<u32>,
@@ -31,7 +31,10 @@ pub struct DiffStats {
     pub unchanged: u32,
 }
 
-pub fn compute_diff(old_text: &str, new_text: &str) -> DiffResult {
+pub fn compute_diff(
+    old_text: &str,
+    new_text: &str,
+) -> DiffResult {
     let diff = TextDiff::from_lines(old_text, new_text);
 
     let mut hunks = Vec::new();
@@ -66,22 +69,36 @@ pub fn compute_diff(old_text: &str, new_text: &str) -> DiffResult {
         };
 
         let content = change.to_string();
-        let content = content.trim_end_matches('
-');
+        let content = content.trim_end_matches('\n');
+
+        let old_ln = if change.tag() != ChangeTag::Insert {
+            Some(old_line)
+        } else {
+            None
+        };
+        let new_ln = if change.tag() != ChangeTag::Delete {
+            Some(new_line)
+        } else {
+            None
+        };
 
         current_hunk.changes.push(DiffChange {
             change_type: change_type.to_string(),
             content: content.to_string(),
-            old_line: if change.tag() != ChangeTag::Insert { Some(old_line) } else { None },
-            new_line: if change.tag() != ChangeTag::Delete { Some(new_line) } else { None },
+            old_line: old_ln,
+            new_line: new_ln,
         });
 
         match change.tag() {
-            ChangeTag::Equal | ChangeTag::Delete => old_line += 1,
+            ChangeTag::Equal | ChangeTag::Delete => {
+                old_line += 1
+            }
             _ => {}
         }
         match change.tag() {
-            ChangeTag::Equal | ChangeTag::Insert => new_line += 1,
+            ChangeTag::Equal | ChangeTag::Insert => {
+                new_line += 1
+            }
             _ => {}
         }
 
@@ -89,7 +106,9 @@ pub fn compute_diff(old_text: &str, new_text: &str) -> DiffResult {
         current_hunk.new_lines += 1;
 
         // Split into hunks of ~20 lines
-        if current_hunk.changes.len() >= 20 && change.tag() == ChangeTag::Equal {
+        if current_hunk.changes.len() >= 20
+            && change.tag() == ChangeTag::Equal
+        {
             hunks.push(current_hunk.clone());
             current_hunk = DiffHunk {
                 old_start: old_line,
