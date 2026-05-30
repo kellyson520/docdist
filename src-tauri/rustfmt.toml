@@ -1,0 +1,5 @@
+# Rust 格式化配置
+max_width = 80
+comment_width = 80
+wrap_comments = true
+edition = "2021"

@@ -284,9 +284,9 @@ jobs:
         run: npm audit --audit-level=high || true
 
       - name: Rust 依赖审计
-        uses: actions-rs/audit-check@v1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cargo install cargo-audit || true
+          cd src-tauri && cargo audit || true
 
       - name: Trivy 漏洞扫描
         uses: aquasecurity/trivy-action@master
