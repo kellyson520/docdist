@@ -77,7 +77,7 @@ impl ArchiveService {
         target_path: Option<&str>,
     ) -> Result<(), AppError> {
         let archive = db::get_archive(&self.pool, archive_id)?
-            .ok_or(|| AppError::Other("存档不存在".to_string()))?;
+            .ok_or_else(|| AppError::Other("存档不存在".to_string()))?;
 
         let chunk_hashes = db::get_archive_chunks(&self.pool, archive_id)?;
 
