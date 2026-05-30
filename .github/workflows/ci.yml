@@ -77,7 +77,7 @@ jobs:
           restore-keys: ${{ runner.os }}-cargo-
 
       - name: 格式检查
-        run: cd src-tauri && cargo fmt --all -- --check
+        run: cd src-tauri && cargo fmt --all -- --check || (cargo fmt --all && echo "格式已自动修复" && git diff && exit 1)
 
       - name: Clippy 静态分析
         run: cd src-tauri && cargo clippy -- -D warnings
