@@ -49,8 +49,8 @@ export const useArchiveStore = create<ArchiveState>((set, get) => ({
         search: search || null,
       });
       set({ archives, loading: false });
-    } catch (e: any) {
-      set({ error: e.toString(), loading: false });
+    } catch (e: unknown) {
+      set({ error: e instanceof Error ? e.message : String(e), loading: false });
     }
   },
 
@@ -64,16 +64,16 @@ export const useArchiveStore = create<ArchiveState>((set, get) => ({
         parentId: null,
       });
       await get().fetchArchives();
-    } catch (e: any) {
-      set({ error: e.toString(), loading: false });
+    } catch (e: unknown) {
+      set({ error: e instanceof Error ? e.message : String(e), loading: false });
     }
   },
 
   restoreArchive: async (id: string, targetPath?: string) => {
     try {
       await invoke('restore_archive', { id, targetPath: targetPath || null });
-    } catch (e: any) {
-      set({ error: e.toString() });
+    } catch (e: unknown) {
+      set({ error: e instanceof Error ? e.message : String(e) });
     }
   },
 
@@ -84,8 +84,8 @@ export const useArchiveStore = create<ArchiveState>((set, get) => ({
         archives: state.archives.filter((a) => a.id !== id),
         selectedArchive: state.selectedArchive?.id === id ? null : state.selectedArchive,
       }));
-    } catch (e: any) {
-      set({ error: e.toString() });
+    } catch (e: unknown) {
+      set({ error: e instanceof Error ? e.message : String(e) });
     }
   },
 
@@ -97,8 +97,8 @@ export const useArchiveStore = create<ArchiveState>((set, get) => ({
           a.id === id ? { ...a, note, tags } : a
         ),
       }));
-    } catch (e: any) {
-      set({ error: e.toString() });
+    } catch (e: unknown) {
+      set({ error: e instanceof Error ? e.message : String(e) });
     }
   },
 
@@ -107,8 +107,8 @@ export const useArchiveStore = create<ArchiveState>((set, get) => ({
     try {
       const result = await invoke<DiffResult>('compare_archives', { id1, id2 });
       set({ diffResult: result, loading: false });
-    } catch (e: any) {
-      set({ error: e.toString(), loading: false });
+    } catch (e: unknown) {
+      set({ error: e instanceof Error ? e.message : String(e), loading: false });
     }
   },
 
@@ -116,8 +116,8 @@ export const useArchiveStore = create<ArchiveState>((set, get) => ({
     try {
       const timeline = await invoke<Archive[]>('get_timeline', { path: filePath });
       set({ timeline });
-    } catch (e: any) {
-      set({ error: e.toString() });
+    } catch (e: unknown) {
+      set({ error: e instanceof Error ? e.message : String(e) });
     }
   },
 
@@ -125,7 +125,7 @@ export const useArchiveStore = create<ArchiveState>((set, get) => ({
     try {
       const statistics = await invoke<Statistics>('get_statistics');
       set({ statistics });
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error(e);
     }
   },

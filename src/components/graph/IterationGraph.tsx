@@ -1,7 +1,5 @@
 import { useEffect, useState } from 'react';
 import { useArchiveStore } from '../../stores/archiveStore';
-import { invoke } from '@tauri-apps/api/tauri';
-import type { Archive } from '../../types';
 import { formatFileSize, formatDate } from '../../utils/format';
 import { GitBranch, FileText } from 'lucide-react';
 
@@ -102,7 +100,7 @@ export function IterationGraph() {
 
   useEffect(() => {
     fetchArchives();
-  }, []);
+  }, [fetchArchives]);
 
   useEffect(() => {
     setTree(buildTree(archives));

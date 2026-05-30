@@ -1,17 +1,17 @@
 import { useEffect } from 'react';
 import { useArchiveStore } from '../../stores/archiveStore';
-import { formatFileSize, formatDate, getTagColor } from '../../utils/format';
+import { formatFileSize, formatDate } from '../../utils/format';
 import { TagBadge } from '../common/TagBadge';
 import { Clock, RotateCcw, Trash2, FileText } from 'lucide-react';
 
 export function TimelineView() {
-  const { timeline, selectedArchive, fetchTimeline, restoreArchive, deleteArchive, selectArchive } = useArchiveStore();
+  const { timeline, selectedArchive, fetchTimeline, restoreArchive, deleteArchive } = useArchiveStore();
 
   useEffect(() => {
     if (selectedArchive) {
       fetchTimeline(selectedArchive.file_path);
     }
-  }, [selectedArchive]);
+  }, [selectedArchive, fetchTimeline]);
 
   if (!selectedArchive) {
     return (

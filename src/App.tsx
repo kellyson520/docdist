@@ -5,19 +5,19 @@ import { TimelineView } from './components/timeline/TimelineView';
 import { DiffViewer } from './components/diff/DiffViewer';
 import { IterationGraph } from './components/graph/IterationGraph';
 import { MiniMode } from './components/mini/MiniMode';
-import { FolderOpen, Clock, GitCompare, GitBranch, Settings, Minimize2, Maximize2 } from 'lucide-react';
+import { FolderOpen, Clock, GitCompare, GitBranch, Minimize2 } from 'lucide-react';
 
 type View = 'list' | 'timeline' | 'diff' | 'graph';
 
 export default function App() {
-  const { view, setView, fetchArchives, fetchStatistics, statistics } = useArchiveStore();
+  const { fetchArchives, fetchStatistics, statistics } = useArchiveStore();
   const [isMini, setIsMini] = useState(false);
   const [activeView, setActiveView] = useState<View>('list');
 
   useEffect(() => {
     fetchArchives();
     fetchStatistics();
-  }, []);
+  }, [fetchArchives, fetchStatistics]);
 
   const navItems = [
     { id: 'list' as View, label: '存档管理', icon: FolderOpen },

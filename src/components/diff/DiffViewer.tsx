@@ -1,5 +1,5 @@
 import { useArchiveStore } from '../../stores/archiveStore';
-import { X, GitCompare, FileText } from 'lucide-react';
+import { X, GitCompare } from 'lucide-react';
 
 export function DiffViewer() {
   const { diffResult, clearDiff, loading } = useArchiveStore();

@@ -11,7 +11,7 @@ export function ArchiveList() {
   const {
     archives, selectedArchive, loading, searchQuery,
     fetchArchives, createArchive, restoreArchive, deleteArchive,
-    compareArchives, selectArchive, setView, setSearchQuery,
+    compareArchives, selectArchive, setSearchQuery,
   } = useArchiveStore();
 
   const [showCreate, setShowCreate] = useState(false);
@@ -19,14 +19,14 @@ export function ArchiveList() {
 
   useEffect(() => {
     fetchArchives();
-  }, []);
+  }, [fetchArchives]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
       fetchArchives(undefined, searchQuery);
     }, 300);
     return () => clearTimeout(timer);
-  }, [searchQuery]);
+  }, [searchQuery, fetchArchives]);
 
   const handleCreate = async () => {
     const selected = await open({
@@ -36,7 +36,7 @@ export function ArchiveList() {
     if (selected) {
       setShowCreate(true);
       // Store the path for the dialog
-      (window as any).__selectedFilePath = selected;
+      (window as unknown as Record<string, string>).__selectedFilePath = selected as string;
     }
   };
 
@@ -100,7 +100,7 @@ export function ArchiveList() {
       {/* Create Dialog */}
       {showCreate && (
         <CreateArchiveDialog
-          defaultPath={(window as any).__selectedFilePath || ''}
+          defaultPath={(window as unknown as Record<string, string>).__selectedFilePath || ''}
           onConfirm={(path, note, tags) => {
             createArchive(path, note, tags);
             setShowCreate(false);

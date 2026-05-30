@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { useArchiveStore } from '../../stores/archiveStore';
 import { formatFileSize, formatDate } from '../../utils/format';
-import { TagBadge } from '../common/TagBadge';
 import { Archive, RotateCcw, Maximize2, Plus, Clock, ChevronDown } from 'lucide-react';
 import { open } from '@tauri-apps/api/dialog';
 

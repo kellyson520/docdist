@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import type { Archive, DiffResult, DiffStats } from '../index';
+import type { Archive, DiffStats } from '../index';
 
 describe('Type definitions', () => {
   it('Archive interface is correctly shaped', () => {

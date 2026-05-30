@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatFileSize, formatDate, truncateText, getTagColor } from '../format';
+import { formatFileSize, truncateText, getTagColor } from '../format';
 
 describe('formatFileSize', () => {
   it('formats 0 bytes', () => {
