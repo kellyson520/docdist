@@ -70,10 +70,8 @@ pub fn cleanup_chunks(
         if entry.file_type()?.is_dir() {
             for chunk_entry in std::fs::read_dir(entry.path())? {
                 let chunk_entry = chunk_entry?;
-                let name = chunk_entry
-                    .file_name()
-                    .to_string_lossy()
-                    .to_string();
+                let name =
+                    chunk_entry.file_name().to_string_lossy().to_string();
                 if !active_set.contains(&name) {
                     std::fs::remove_file(chunk_entry.path())?;
                     removed += 1;

@@ -25,17 +25,15 @@ pub fn run() {
     std::fs::create_dir_all(&data_dir).ok();
 
     let db_path = data_dir.join("data.db");
-    let pool = db::init_database(&db_path)
-        .expect("Failed to initialize database");
+    let pool =
+        db::init_database(&db_path).expect("Failed to initialize database");
 
     let service = ArchiveService::new(pool, &data_dir);
 
     tauri::Builder::default()
         .manage(AppState {
             service,
-            watcher: Mutex::new(
-                watcher::FileWatcher::new(),
-            ),
+            watcher: Mutex::new(watcher::FileWatcher::new()),
         })
         .invoke_handler(tauri::generate_handler![
             commands::create_archive,

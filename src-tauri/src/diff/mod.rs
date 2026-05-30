@@ -1,5 +1,5 @@
-use similar::{ChangeTag, TextDiff};
 use serde::Serialize;
+use similar::{ChangeTag, TextDiff};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct DiffResult {
@@ -31,10 +31,7 @@ pub struct DiffStats {
     pub unchanged: u32,
 }
 
-pub fn compute_diff(
-    old_text: &str,
-    new_text: &str,
-) -> DiffResult {
+pub fn compute_diff(old_text: &str, new_text: &str) -> DiffResult {
     let diff = TextDiff::from_lines(old_text, new_text);
 
     let mut hunks = Vec::new();
@@ -90,15 +87,11 @@ pub fn compute_diff(
         });
 
         match change.tag() {
-            ChangeTag::Equal | ChangeTag::Delete => {
-                old_line += 1
-            }
+            ChangeTag::Equal | ChangeTag::Delete => old_line += 1,
             _ => {}
         }
         match change.tag() {
-            ChangeTag::Equal | ChangeTag::Insert => {
-                new_line += 1
-            }
+            ChangeTag::Equal | ChangeTag::Insert => new_line += 1,
             _ => {}
         }
 
@@ -106,8 +99,7 @@ pub fn compute_diff(
         current_hunk.new_lines += 1;
 
         // Split into hunks of ~20 lines
-        if current_hunk.changes.len() >= 20
-            && change.tag() == ChangeTag::Equal
+        if current_hunk.changes.len() >= 20 && change.tag() == ChangeTag::Equal
         {
             hunks.push(current_hunk.clone());
             current_hunk = DiffHunk {

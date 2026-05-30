@@ -22,16 +22,15 @@ pub struct Archive {
 pub fn init_database(
     db_path: &std::path::Path,
 ) -> Result<DbPool, crate::error::AppError> {
-    let manager =
-        SqliteConnectionManager::file(db_path).with_init(|conn| {
-            conn.execute_batch(
-                "PRAGMA journal_mode = WAL;
+    let manager = SqliteConnectionManager::file(db_path).with_init(|conn| {
+        conn.execute_batch(
+            "PRAGMA journal_mode = WAL;
                  PRAGMA synchronous = NORMAL;
                  PRAGMA foreign_keys = ON;
                  PRAGMA temp_store = MEMORY;",
-            )?;
-            Ok(())
-        });
+        )?;
+        Ok(())
+    });
 
     let pool = Pool::builder().max_size(5).build(manager)?;
 
@@ -145,12 +144,8 @@ pub fn get_archives(
     search: Option<&str>,
 ) -> Result<Vec<Archive>, crate::error::AppError> {
     let conn = pool.get()?;
-    let mut sql = format!(
-        "SELECT {} FROM archives WHERE 1=1",
-        SELECT_FIELDS
-    );
-    let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> =
-        Vec::new();
+    let mut sql = format!("SELECT {} FROM archives WHERE 1=1", SELECT_FIELDS);
+    let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
 
     if let Some(path) = file_path {
         if !path.is_empty() {
@@ -171,8 +166,7 @@ pub fn get_archives(
     let mut stmt = conn.prepare(&sql)?;
     let params_refs: Vec<&dyn rusqlite::types::ToSql> =
         param_values.iter().map(|p| p.as_ref()).collect();
-    let rows =
-        stmt.query_map(params_refs.as_slice(), row_to_archive)?;
+    let rows = stmt.query_map(params_refs.as_slice(), row_to_archive)?;
 
     Ok(rows.filter_map(|r| r.ok()).collect())
 }
@@ -202,10 +196,7 @@ pub fn delete_archive(
         "DELETE FROM archive_chunks WHERE archive_id = ?1",
         params![id],
     )?;
-    conn.execute(
-        "DELETE FROM archives WHERE id = ?1",
-        params![id],
-    )?;
+    conn.execute("DELETE FROM archives WHERE id = ?1", params![id])?;
     Ok(())
 }
 
@@ -233,9 +224,8 @@ pub fn get_archive_chunks(
         "SELECT chunk_hash FROM archive_chunks
          WHERE archive_id = ?1 ORDER BY chunk_index",
     )?;
-    let rows = stmt.query_map(params![archive_id], |row| {
-        row.get::<_, String>(0)
-    })?;
+    let rows =
+        stmt.query_map(params![archive_id], |row| row.get::<_, String>(0))?;
     Ok(rows.filter_map(|r| r.ok()).collect())
 }
 
@@ -249,8 +239,7 @@ pub fn get_timeline(
          WHERE file_path = ?1 ORDER BY created_at DESC",
         SELECT_FIELDS
     ))?;
-    let rows =
-        stmt.query_map(params![file_path], row_to_archive)?;
+    let rows = stmt.query_map(params![file_path], row_to_archive)?;
     Ok(rows.filter_map(|r| r.ok()).collect())
 }
 
@@ -264,8 +253,7 @@ pub fn get_children(
          WHERE parent_id = ?1 ORDER BY created_at",
         SELECT_FIELDS
     ))?;
-    let rows =
-        stmt.query_map(params![parent_id], row_to_archive)?;
+    let rows = stmt.query_map(params![parent_id], row_to_archive)?;
     Ok(rows.filter_map(|r| r.ok()).collect())
 }
 
@@ -273,11 +261,8 @@ pub fn get_statistics(
     pool: &DbPool,
 ) -> Result<serde_json::Value, crate::error::AppError> {
     let conn = pool.get()?;
-    let total: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM archives",
-        [],
-        |r| r.get(0),
-    )?;
+    let total: i64 =
+        conn.query_row("SELECT COUNT(*) FROM archives", [], |r| r.get(0))?;
     let total_size: i64 = conn.query_row(
         "SELECT COALESCE(SUM(file_size), 0) FROM archives",
         [],

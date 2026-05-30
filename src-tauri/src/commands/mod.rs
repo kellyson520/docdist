@@ -1,8 +1,8 @@
-use tauri::State;
 use crate::db::Archive;
 use crate::diff::DiffResult;
 use crate::error::AppError;
 use crate::AppState;
+use tauri::State;
 
 #[tauri::command]
 pub async fn create_archive(
@@ -26,9 +26,7 @@ pub async fn restore_archive(
     id: String,
     target_path: Option<String>,
 ) -> Result<(), AppError> {
-    state
-        .service
-        .restore_archive(&id, target_path.as_deref())
+    state.service.restore_archive(&id, target_path.as_deref())
 }
 
 #[tauri::command]

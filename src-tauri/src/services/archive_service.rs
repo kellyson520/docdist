@@ -1,8 +1,8 @@
-use std::path::Path;
 use crate::db::{self, Archive, DbPool};
-use crate::storage;
 use crate::diff;
 use crate::error::AppError;
+use crate::storage;
+use std::path::Path;
 
 pub struct ArchiveService {
     pool: DbPool,
@@ -39,8 +39,7 @@ impl ArchiveService {
 
         // Find previous archive for this file
         let actual_parent = if parent_id.is_none() {
-            let timeline =
-                db::get_timeline(&self.pool, file_path)?;
+            let timeline = db::get_timeline(&self.pool, file_path)?;
             timeline.first().map(|a| a.id.clone())
         } else {
             parent_id
@@ -62,15 +61,9 @@ impl ArchiveService {
         };
 
         // Save chunks info
-        let chunk_infos: Vec<(String, usize)> = chunk_hashes
-            .iter()
-            .map(|h| (h.clone(), 4096))
-            .collect();
-        db::insert_archive_chunks(
-            &self.pool,
-            &archive.id,
-            &chunk_infos,
-        )?;
+        let chunk_infos: Vec<(String, usize)> =
+            chunk_hashes.iter().map(|h| (h.clone(), 4096)).collect();
+        db::insert_archive_chunks(&self.pool, &archive.id, &chunk_infos)?;
 
         // Save archive
         db::insert_archive(&self.pool, &archive)?;
@@ -83,24 +76,17 @@ impl ArchiveService {
         archive_id: &str,
         target_path: Option<&str>,
     ) -> Result<(), AppError> {
-        let archive =
-            db::get_archive(&self.pool, archive_id)?.ok_or(
-                || AppError::Other("存档不存在".to_string()),
-            )?;
+        let archive = db::get_archive(&self.pool, archive_id)?
+            .ok_or(|| AppError::Other("存档不存在".to_string()))?;
 
-        let chunk_hashes =
-            db::get_archive_chunks(&self.pool, archive_id)?;
+        let chunk_hashes = db::get_archive_chunks(&self.pool, archive_id)?;
 
         let output_path = match target_path {
             Some(p) => std::path::PathBuf::from(p),
             None => std::path::PathBuf::from(&archive.file_path),
         };
 
-        storage::restore_file(
-            &self.chunks_dir,
-            &chunk_hashes,
-            &output_path,
-        )?;
+        storage::restore_file(&self.chunks_dir, &chunk_hashes, &output_path)?;
         Ok(())
     }
 
@@ -112,10 +98,7 @@ impl ArchiveService {
         db::get_archives(&self.pool, file_path, search)
     }
 
-    pub fn delete_archive(
-        &self,
-        archive_id: &str,
-    ) -> Result<(), AppError> {
+    pub fn delete_archive(&self, archive_id: &str) -> Result<(), AppError> {
         db::delete_archive(&self.pool, archive_id)
     }
 
@@ -133,10 +116,8 @@ impl ArchiveService {
         id1: &str,
         id2: &str,
     ) -> Result<diff::DiffResult, AppError> {
-        let chunks1 =
-            db::get_archive_chunks(&self.pool, id1)?;
-        let chunks2 =
-            db::get_archive_chunks(&self.pool, id2)?;
+        let chunks1 = db::get_archive_chunks(&self.pool, id1)?;
+        let chunks2 = db::get_archive_chunks(&self.pool, id2)?;
 
         let text1 = self.read_chunks_as_text(&chunks1)?;
         let text2 = self.read_chunks_as_text(&chunks2)?;
@@ -158,9 +139,7 @@ impl ArchiveService {
         db::get_children(&self.pool, parent_id)
     }
 
-    pub fn get_statistics(
-        &self,
-    ) -> Result<serde_json::Value, AppError> {
+    pub fn get_statistics(&self) -> Result<serde_json::Value, AppError> {
         db::get_statistics(&self.pool)
     }
 
@@ -170,8 +149,7 @@ impl ArchiveService {
     ) -> Result<String, AppError> {
         let mut content = Vec::new();
         for hash in chunk_hashes {
-            let chunk_path =
-                self.chunks_dir.join(&hash[..2]).join(hash);
+            let chunk_path = self.chunks_dir.join(&hash[..2]).join(hash);
             if chunk_path.exists() {
                 let data = std::fs::read(&chunk_path)?;
                 content.extend_from_slice(&data);

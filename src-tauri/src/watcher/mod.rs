@@ -1,6 +1,6 @@
+use notify::{Event, EventKind, RecursiveMode, Watcher};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use notify::{Watcher, RecursiveMode, Event, EventKind};
 
 #[allow(dead_code)]
 #[derive(Clone, serde::Serialize)]
@@ -35,13 +35,9 @@ impl FileWatcher {
             move |res: Result<Event, notify::Error>| {
                 if let Ok(event) = res {
                     match event.kind {
-                        EventKind::Modify(_)
-                        | EventKind::Create(_) => {
+                        EventKind::Modify(_) | EventKind::Create(_) => {
                             for path in event.paths {
-                                tracing::info!(
-                                    "File changed: {:?}",
-                                    path
-                                );
+                                tracing::info!("File changed: {:?}", path);
                             }
                         }
                         _ => {}
@@ -49,9 +45,7 @@ impl FileWatcher {
                 }
             },
         )
-        .map_err(|e| {
-            crate::error::AppError::Other(e.to_string())
-        })?;
+        .map_err(|e| crate::error::AppError::Other(e.to_string()))?;
 
         for path in &paths {
             let p = PathBuf::from(path);
@@ -74,10 +68,8 @@ impl FileWatcher {
 
     pub fn stop(&mut self) {
         if let Some(mut watcher) = self.watcher.take() {
-            for path in self.watched_paths.lock().unwrap().iter()
-            {
-                let _ =
-                    watcher.unwatch(std::path::Path::new(path));
+            for path in self.watched_paths.lock().unwrap().iter() {
+                let _ = watcher.unwatch(std::path::Path::new(path));
             }
         }
         self.watched_paths.lock().unwrap().clear();
