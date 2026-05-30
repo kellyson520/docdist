@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useArchiveStore } from '../../stores/archiveStore';
-import { formatFileSize, formatDate } from '../../utils/format';
-import { GitBranch, FileText } from 'lucide-react';
+import { formatFileSize } from '../../utils/format';
+import { formatSmartTime } from '../../utils/time';
+import { GitBranch, FileText, RotateCcw, ChevronDown, ChevronRight, ZoomIn, ZoomOut } from 'lucide-react';
+import type { Archive } from '../../types';
 
 interface TreeNode {
   archive: Archive;
@@ -28,40 +30,61 @@ function buildTree(archives: Archive[]): TreeNode[] {
   return roots;
 }
 
-function TreeNodeComponent({ node, depth = 0 }: { node: TreeNode; depth?: number }) {
-  const { selectArchive, restoreArchive } = useArchiveStore();
-  const [expanded, setExpanded] = useState(true);
+interface TreeNodeComponentProps {
+  node: TreeNode;
+  depth?: number;
+  onSelect: (archive: Archive) => void;
+  onRestore: (id: string) => void;
+  expandedNodes: Set<string>;
+  toggleNode: (id: string) => void;
+  zoom: number;
+}
+
+function TreeNodeComponent({ 
+  node, 
+  depth = 0, 
+  onSelect, 
+  onRestore, 
+  expandedNodes, 
+  toggleNode,
+  zoom 
+}: TreeNodeComponentProps) {
   const hasChildren = node.children.length > 0;
+  const isExpanded = expandedNodes.has(node.archive.id);
 
   return (
-    <div style={{ marginLeft: depth > 0 ? 24 : 0 }}>
+    <div style={{ marginLeft: depth > 0 ? 24 * zoom : 0 }}>
       <div className="flex items-start gap-2 mb-2 animate-slide-in">
         {/* Tree lines */}
         <div className="flex flex-col items-center">
           <div
-            className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 cursor-pointer
-              ${hasChildren ? 'bg-primary-100 text-primary-600' : 'bg-gray-100 text-gray-400'}`}
-            onClick={() => hasChildren && setExpanded(!expanded)}
+            className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 cursor-pointer transition-all
+              ${hasChildren ? 'bg-primary-100 text-primary-600 hover:bg-primary-200' : 'bg-gray-100 text-gray-400'}`}
+            onClick={() => hasChildren && toggleNode(node.archive.id)}
           >
             {hasChildren ? (
-              <span className="text-xs font-bold">{node.children.length}</span>
+              isExpanded ? (
+                <ChevronDown className="w-3 h-3" />
+              ) : (
+                <ChevronRight className="w-3 h-3" />
+              )
             ) : (
               <FileText className="w-3 h-3" />
             )}
           </div>
-          {hasChildren && expanded && (
+          {hasChildren && isExpanded && (
             <div className="w-0.5 h-full bg-gray-200 mt-1" />
           )}
         </div>
 
         {/* Node content */}
         <div
-          className="flex-1 p-3 bg-white rounded-lg border border-gray-200 hover:border-primary-300 cursor-pointer transition"
-          onClick={() => selectArchive(node.archive)}
+          className="flex-1 p-3 bg-white rounded-lg border border-gray-200 hover:border-primary-300 cursor-pointer transition group"
+          onClick={() => onSelect(node.archive)}
         >
           <div className="flex items-center justify-between">
-            <span className="text-sm font-medium">{node.archive.file_name}</span>
-            <span className="text-xs text-gray-400">{formatDate(node.archive.created_at)}</span>
+            <span className="text-sm font-medium truncate">{node.archive.file_name}</span>
+            <span className="text-xs text-gray-400">{formatSmartTime(node.archive.created_at)}</span>
           </div>
           <div className="flex items-center gap-2 mt-1 text-xs text-gray-500">
             <span>{formatFileSize(node.archive.file_size)}</span>
@@ -72,21 +95,36 @@ function TreeNodeComponent({ node, depth = 0 }: { node: TreeNode; depth?: number
               </>
             )}
           </div>
-          <div className="mt-2 flex gap-2">
+          <div className="mt-2 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
             <button
-              onClick={(e) => { e.stopPropagation(); restoreArchive(node.archive.id); }}
-              className="text-xs text-primary-600 hover:underline"
+              onClick={(e) => { e.stopPropagation(); onRestore(node.archive.id); }}
+              className="flex items-center gap-1 text-xs text-primary-600 hover:underline"
             >
+              <RotateCcw className="w-3 h-3" />
               恢复
             </button>
+            {hasChildren && (
+              <span className="text-xs text-gray-400">
+                {node.children.length} 个子版本
+              </span>
+            )}
           </div>
         </div>
       </div>
 
-      {hasChildren && expanded && (
+      {hasChildren && isExpanded && (
         <div className="ml-3">
           {node.children.map((child) => (
-            <TreeNodeComponent key={child.archive.id} node={child} depth={depth + 1} />
+            <TreeNodeComponent 
+              key={child.archive.id} 
+              node={child} 
+              depth={depth + 1}
+              onSelect={onSelect}
+              onRestore={onRestore}
+              expandedNodes={expandedNodes}
+              toggleNode={toggleNode}
+              zoom={zoom}
+            />
           ))}
         </div>
       )}
@@ -95,34 +133,130 @@ function TreeNodeComponent({ node, depth = 0 }: { node: TreeNode; depth?: number
 }
 
 export function IterationGraph() {
-  const { archives, fetchArchives } = useArchiveStore();
+  const { archives, fetchArchives, selectArchive, restoreArchive } = useArchiveStore();
   const [tree, setTree] = useState<TreeNode[]>([]);
+  const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
+  const [zoom, setZoom] = useState(1);
 
   useEffect(() => {
     fetchArchives();
   }, [fetchArchives]);
 
   useEffect(() => {
-    setTree(buildTree(archives));
+    const builtTree = buildTree(archives);
+    setTree(builtTree);
+    
+    // Auto-expand root nodes
+    const rootIds = new Set(builtTree.map(n => n.archive.id));
+    setExpandedNodes(rootIds);
   }, [archives]);
+
+  const toggleNode = useCallback((id: string) => {
+    setExpandedNodes(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  }, []);
+
+  const expandAll = useCallback(() => {
+    const allIds = new Set<string>();
+    const collectIds = (nodes: TreeNode[]) => {
+      for (const node of nodes) {
+        if (node.children.length > 0) {
+          allIds.add(node.archive.id);
+          collectIds(node.children);
+        }
+      }
+    };
+    collectIds(tree);
+    setExpandedNodes(allIds);
+  }, [tree]);
+
+  const collapseAll = useCallback(() => {
+    setExpandedNodes(new Set());
+  }, []);
+
+  const handleZoomIn = useCallback(() => {
+    setZoom(prev => Math.min(prev + 0.1, 1.5));
+  }, []);
+
+  const handleZoomOut = useCallback(() => {
+    setZoom(prev => Math.max(prev - 0.1, 0.5));
+  }, []);
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center gap-2 p-4 border-b border-gray-100">
-        <GitBranch className="w-5 h-5 text-primary-500" />
-        <h2 className="font-semibold text-lg">迭代关系图</h2>
+      {/* Header */}
+      <div className="flex items-center justify-between p-4 border-b border-gray-100">
+        <div className="flex items-center gap-2">
+          <GitBranch className="w-5 h-5 text-primary-500" />
+          <h2 className="font-semibold text-lg">迭代关系图</h2>
+          <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
+            {tree.length} 个根节点
+          </span>
+        </div>
+
+        <div className="flex items-center gap-2">
+          {/* Zoom Controls */}
+          <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
+            <button
+              onClick={handleZoomOut}
+              className="p-1 hover:bg-white rounded transition"
+              title="缩小"
+            >
+              <ZoomOut className="w-3.5 h-3.5 text-gray-600" />
+            </button>
+            <span className="text-xs text-gray-600 px-1">{Math.round(zoom * 100)}%</span>
+            <button
+              onClick={handleZoomIn}
+              className="p-1 hover:bg-white rounded transition"
+              title="放大"
+            >
+              <ZoomIn className="w-3.5 h-3.5 text-gray-600" />
+            </button>
+          </div>
+
+          {/* Expand/Collapse */}
+          <button
+            onClick={expandAll}
+            className="px-2 py-1.5 text-xs text-gray-600 hover:bg-gray-100 rounded transition"
+          >
+            展开全部
+          </button>
+          <button
+            onClick={collapseAll}
+            className="px-2 py-1.5 text-xs text-gray-600 hover:bg-gray-100 rounded transition"
+          >
+            折叠全部
+          </button>
+        </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4">
+      {/* Graph */}
+      <div className="flex-1 overflow-auto p-4">
         {tree.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-64 text-gray-400">
             <GitBranch className="w-12 h-12 mb-3 opacity-30" />
             <p className="text-sm">暂无存档关系</p>
+            <p className="text-xs mt-1">创建存档时可以指定父存档，形成迭代关系</p>
           </div>
         ) : (
-          <div className="space-y-2">
+          <div className="space-y-2" style={{ transform: `scale(${zoom})`, transformOrigin: 'top left' }}>
             {tree.map((node) => (
-              <TreeNodeComponent key={node.archive.id} node={node} />
+              <TreeNodeComponent 
+                key={node.archive.id} 
+                node={node}
+                onSelect={selectArchive}
+                onRestore={restoreArchive}
+                expandedNodes={expandedNodes}
+                toggleNode={toggleNode}
+                zoom={zoom}
+              />
             ))}
           </div>
         )}
