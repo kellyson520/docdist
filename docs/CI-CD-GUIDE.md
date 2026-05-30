@@ -1,4 +1,4 @@
-# 追光 Lite - CI/CD 完整指南
+# DocDist - CI/CD 完整指南
 
 ## 📋 目录
 

@@ -1,5 +1,5 @@
 [package]
-name = "zhuiguang-lite"
+name = "docdist"
 version = "0.1.0"
 edition = "2021"
 description = "轻量级文件历史管理工具"

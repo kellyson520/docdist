@@ -46,7 +46,7 @@ export default function App() {
               <span className="text-white text-sm font-bold">追</span>
             </div>
             <div>
-              <h1 className="font-bold text-sm">追光 Lite</h1>
+              <h1 className="font-bold text-sm">DocDist</h1>
               <p className="text-xs text-gray-400">文件历史管理</p>
             </div>
           </div>

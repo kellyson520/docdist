@@ -1,4 +1,4 @@
-# 追光 Lite
+# DocDist
 
 > 轻量简约的文件历史管理工具，帮你跟踪、回溯、整理文件历史。
 
@@ -45,10 +45,23 @@ npm run tauri dev
 npm run tauri build
 ```
 
+### 测试
+
+```bash
+# 前端测试
+npm run test
+
+# Rust 测试
+cd src-tauri && cargo test
+
+# E2E 测试
+npm run test:e2e
+```
+
 ## 📁 项目结构
 
 ```
-zhuiguang-lite/
+docdist/
 ├── src/                    # React 前端
 │   ├── components/         # UI 组件
 │   │   ├── archive/        # 存档管理
@@ -68,8 +81,28 @@ zhuiguang-lite/
 │       ├── diff/           # 差异对比引擎
 │       ├── watcher/        # 文件监控
 │       └── db/             # 数据库
+├── e2e/                    # E2E 测试
+├── docs/                   # 文档
 └── package.json
 ```
+
+## 📦 下载
+
+前往 [Releases](https://github.com/kellyson520/docdist/releases) 页面下载最新版本。
+
+- Windows: `.msi` 或 `.exe`
+- macOS: `.dmg`
+- Linux: `.AppImage` 或 `.deb`
+
+## 🤝 贡献
+
+欢迎提交 Issue 和 Pull Request！
+
+1. Fork 本仓库
+2. 创建功能分支: `git checkout -b feature/amazing-feature`
+3. 提交更改: `git commit -m 'feat: 新增某功能'`
+4. 推送分支: `git push origin feature/amazing-feature`
+5. 提交 Pull Request
 
 ## 📄 License
 
