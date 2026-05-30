@@ -5,7 +5,9 @@ import { TimelineView } from './components/timeline/TimelineView';
 import { DiffViewer } from './components/diff/DiffViewer';
 import { IterationGraph } from './components/graph/IterationGraph';
 import { MiniMode } from './components/mini/MiniMode';
+import { ThemeToggle } from './components/common/ThemeToggle';
 import { FolderOpen, Clock, GitCompare, GitBranch, Minimize2 } from 'lucide-react';
+import './styles/themes.css';
 
 type View = 'list' | 'timeline' | 'diff' | 'graph';
 
@@ -85,6 +87,11 @@ export default function App() {
             </div>
           </div>
         )}
+
+        {/* Theme Toggle */}
+        <div className="p-3 border-t border-gray-100">
+          <ThemeToggle />
+        </div>
 
         {/* Mini mode toggle */}
         <div className="p-3 border-t border-gray-100">
