@@ -273,9 +273,124 @@ pub fn get_statistics(
         [],
         |r| r.get(0),
     )?;
+    let total_chunks: i64 =
+        conn.query_row("SELECT COUNT(*) FROM archive_chunks", [], |r| {
+            r.get(0)
+        })?;
     Ok(serde_json::json!({
         "total_archives": total,
         "total_size": total_size,
         "unique_files": unique_files,
+        "total_chunks": total_chunks,
+    }))
+}
+
+/// 分页查询存档
+pub fn get_archives_paginated(
+    pool: &DbPool,
+    file_path: Option<&str>,
+    search: Option<&str>,
+    page: u32,
+    page_size: u32,
+) -> Result<(Vec<Archive>, i64), crate::error::AppError> {
+    let conn = pool.get()?;
+    let mut sql = format!("SELECT {} FROM archives WHERE 1=1", SELECT_FIELDS);
+    let mut count_sql = "SELECT COUNT(*) FROM archives WHERE 1=1".to_string();
+    let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+    let mut count_param_values: Vec<Box<dyn rusqlite::types::ToSql>> =
+        Vec::new();
+
+    if let Some(path) = file_path {
+        if !path.is_empty() {
+            sql.push_str(" AND file_path = ?");
+            count_sql.push_str(" AND file_path = ?");
+            param_values.push(Box::new(path.to_string()));
+            count_param_values.push(Box::new(path.to_string()));
+        }
+    }
+    if let Some(s) = search {
+        if !s.is_empty() {
+            sql.push_str(
+                " AND (file_name LIKE ? OR note LIKE ? OR tags LIKE ?)",
+            );
+            count_sql.push_str(
+                " AND (file_name LIKE ? OR note LIKE ? OR tags LIKE ?)",
+            );
+            let pattern = format!("%{}%", s);
+            param_values.push(Box::new(pattern.clone()));
+            param_values.push(Box::new(pattern.clone()));
+            param_values.push(Box::new(pattern.clone()));
+            count_param_values.push(Box::new(pattern.clone()));
+            count_param_values.push(Box::new(pattern.clone()));
+            count_param_values.push(Box::new(pattern));
+        }
+    }
+
+    // Get total count
+    let mut count_stmt = conn.prepare(&count_sql)?;
+    let count_params_refs: Vec<&dyn rusqlite::types::ToSql> =
+        count_param_values.iter().map(|p| p.as_ref()).collect();
+    let total: i64 =
+        count_stmt.query_row(count_params_refs.as_slice(), |r| r.get(0))?;
+
+    // Get paginated results
+    let offset = (page - 1) * page_size;
+    sql.push_str(&format!(
+        " ORDER BY created_at DESC LIMIT {} OFFSET {}",
+        page_size, offset
+    ));
+
+    let mut stmt = conn.prepare(&sql)?;
+    let params_refs: Vec<&dyn rusqlite::types::ToSql> =
+        param_values.iter().map(|p| p.as_ref()).collect();
+    let rows = stmt.query_map(params_refs.as_slice(), row_to_archive)?;
+
+    Ok((rows.filter_map(|r| r.ok()).collect(), total))
+}
+
+/// 批量删除存档
+pub fn delete_archives_batch(
+    pool: &DbPool,
+    ids: &[String],
+) -> Result<usize, crate::error::AppError> {
+    let conn = pool.get()?;
+    let mut deleted = 0;
+
+    for id in ids {
+        conn.execute(
+            "DELETE FROM archive_chunks WHERE archive_id = ?1",
+            params![id],
+        )?;
+        deleted +=
+            conn.execute("DELETE FROM archives WHERE id = ?1", params![id])?;
+    }
+
+    Ok(deleted)
+}
+
+/// 获取存储统计
+pub fn get_storage_stats(
+    pool: &DbPool,
+) -> Result<serde_json::Value, crate::error::AppError> {
+    let conn = pool.get()?;
+
+    let total_chunks: i64 =
+        conn.query_row("SELECT COUNT(*) FROM chunks", [], |r| r.get(0))?;
+
+    let total_chunk_size: i64 =
+        conn.query_row("SELECT COALESCE(SUM(size), 0) FROM chunks", [], |r| {
+            r.get(0)
+        })?;
+
+    let avg_refs: f64 = conn.query_row(
+        "SELECT COALESCE(AVG(ref_count), 0) FROM chunks",
+        [],
+        |r| r.get(0),
+    )?;
+
+    Ok(serde_json::json!({
+        "total_chunks": total_chunks,
+        "total_chunk_size": total_chunk_size,
+        "avg_refs": avg_refs,
     }))
 }
