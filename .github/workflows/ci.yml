@@ -79,6 +79,11 @@ jobs:
       - name: 格式检查
         run: cd src-tauri && cargo fmt --all -- --check
 
+      - name: 安装 Linux 依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev libappindicator3-dev librsvg2-dev patchelf
+
       - name: Clippy 静态分析
         run: cd src-tauri && cargo clippy -- -D warnings
 
