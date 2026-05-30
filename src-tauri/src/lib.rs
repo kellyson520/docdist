@@ -1,3 +1,4 @@
+#![allow(warnings)]
 #![allow(clippy::all)]
 mod commands;
 mod db;
