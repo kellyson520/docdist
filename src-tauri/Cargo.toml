@@ -5,7 +5,7 @@ edition = "2021"
 description = "轻量级文件历史管理工具"
 
 [dependencies]
-tauri = { version = "1.5", features = ["shell-open", "dialog-open"] }
+tauri = { version = "1.5", features = ["shell-open", "dialog-open", "custom-protocol"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 rusqlite = { version = "0.30", features = ["bundled"] }
