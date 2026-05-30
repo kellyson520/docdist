@@ -1,7 +1,6 @@
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use notify::{Watcher, RecursiveMode, Event, EventKind};
-use tokio::sync::mpsc;
 
 #[derive(Clone, serde::Serialize)]
 pub struct FileChangeEvent {
@@ -23,29 +22,47 @@ impl FileWatcher {
         }
     }
 
-    pub fn start(&mut self, paths: Vec<String>) -> Result<(), crate::error::AppError> {
+    pub fn start(
+        &mut self,
+        paths: Vec<String>,
+    ) -> Result<(), crate::error::AppError> {
         self.stop();
 
         let watched = self.watched_paths.clone();
 
-        let mut watcher = notify::recommended_watcher(move |res: Result<Event, notify::Error>| {
-            if let Ok(event) = res {
-                match event.kind {
-                    EventKind::Modify(_) | EventKind::Create(_) => {
-                        for path in event.paths {
-                            tracing::info!("File changed: {:?}", path);
+        let mut watcher = notify::recommended_watcher(
+            move |res: Result<Event, notify::Error>| {
+                if let Ok(event) = res {
+                    match event.kind {
+                        EventKind::Modify(_)
+                        | EventKind::Create(_) => {
+                            for path in event.paths {
+                                tracing::info!(
+                                    "File changed: {:?}",
+                                    path
+                                );
+                            }
                         }
+                        _ => {}
                     }
-                    _ => {}
                 }
-            }
-        }).map_err(|e| crate::error::AppError::Other(e.to_string()))?;
+            },
+        )
+        .map_err(|e| {
+            crate::error::AppError::Other(e.to_string())
+        })?;
 
         for path in &paths {
             let p = PathBuf::from(path);
             if p.exists() {
-                let mode = if p.is_dir() { RecursiveMode::Recursive } else { RecursiveMode::NonRecursive };
-                watcher.watch(&p, mode).map_err(|e| crate::error::AppError::Other(e.to_string()))?;
+                let mode = if p.is_dir() {
+                    RecursiveMode::Recursive
+                } else {
+                    RecursiveMode::NonRecursive
+                };
+                watcher.watch(&p, mode).map_err(|e| {
+                    crate::error::AppError::Other(e.to_string())
+                })?;
             }
         }
 
@@ -56,8 +73,10 @@ impl FileWatcher {
 
     pub fn stop(&mut self) {
         if let Some(mut watcher) = self.watcher.take() {
-            for path in self.watched_paths.lock().unwrap().iter() {
-                let _ = watcher.unwatch(std::path::Path::new(path));
+            for path in self.watched_paths.lock().unwrap().iter()
+            {
+                let _ =
+                    watcher.unwatch(std::path::Path::new(path));
             }
         }
         self.watched_paths.lock().unwrap().clear();

@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use xxhash_rust::xxh3::xxh3_64;
 
@@ -8,13 +7,13 @@ pub fn compute_hash(data: &[u8]) -> String {
     format!("{:016x}", xxh3_64(data))
 }
 
-pub fn store_file(base_dir: &Path, file_path: &Path) -> Result<(Vec<String>, u64, String), crate::error::AppError> {
+pub fn store_file(
+    base_dir: &Path,
+    file_path: &Path,
+) -> Result<(Vec<String>, u64, String), crate::error::AppError> {
     let content = std::fs::read(file_path)?;
     let file_size = content.len() as u64;
-
-    // Compute whole-file checksum
     let file_checksum = compute_hash(&content);
-
     let mut chunk_hashes = Vec::new();
 
     for chunk in content.chunks(CHUNK_SIZE) {
@@ -33,7 +32,11 @@ pub fn store_file(base_dir: &Path, file_path: &Path) -> Result<(Vec<String>, u64
     Ok((chunk_hashes, file_size, file_checksum))
 }
 
-pub fn restore_file(base_dir: &Path, chunk_hashes: &[String], output_path: &Path) -> Result<(), crate::error::AppError> {
+pub fn restore_file(
+    base_dir: &Path,
+    chunk_hashes: &[String],
+    output_path: &Path,
+) -> Result<(), crate::error::AppError> {
     let mut content = Vec::new();
 
     for hash in chunk_hashes {
@@ -42,7 +45,6 @@ pub fn restore_file(base_dir: &Path, chunk_hashes: &[String], output_path: &Path
         content.extend_from_slice(&chunk_data);
     }
 
-    // Create parent directories if needed
     if let Some(parent) = output_path.parent() {
         std::fs::create_dir_all(parent)?;
     }
@@ -51,8 +53,12 @@ pub fn restore_file(base_dir: &Path, chunk_hashes: &[String], output_path: &Path
     Ok(())
 }
 
-pub fn cleanup_chunks(base_dir: &Path, active_hashes: &[String]) -> Result<usize, crate::error::AppError> {
-    let active_set: std::collections::HashSet<String> = active_hashes.iter().cloned().collect();
+pub fn cleanup_chunks(
+    base_dir: &Path,
+    active_hashes: &[String],
+) -> Result<usize, crate::error::AppError> {
+    let active_set: std::collections::HashSet<String> =
+        active_hashes.iter().cloned().collect();
     let mut removed = 0;
 
     if !base_dir.exists() {
@@ -64,7 +70,10 @@ pub fn cleanup_chunks(base_dir: &Path, active_hashes: &[String]) -> Result<usize
         if entry.file_type()?.is_dir() {
             for chunk_entry in std::fs::read_dir(entry.path())? {
                 let chunk_entry = chunk_entry?;
-                let name = chunk_entry.file_name().to_string_lossy().to_string();
+                let name = chunk_entry
+                    .file_name()
+                    .to_string_lossy()
+                    .to_string();
                 if !active_set.contains(&name) {
                     std::fs::remove_file(chunk_entry.path())?;
                     removed += 1;

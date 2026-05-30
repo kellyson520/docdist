@@ -26,7 +26,9 @@ pub async fn restore_archive(
     id: String,
     target_path: Option<String>,
 ) -> Result<(), AppError> {
-    state.service.restore_archive(&id, target_path.as_deref())
+    state
+        .service
+        .restore_archive(&id, target_path.as_deref())
 }
 
 #[tauri::command]
@@ -35,7 +37,9 @@ pub async fn list_archives(
     file_path: Option<String>,
     search: Option<String>,
 ) -> Result<Vec<Archive>, AppError> {
-    state.service.list_archives(file_path.as_deref(), search.as_deref())
+    state
+        .service
+        .list_archives(file_path.as_deref(), search.as_deref())
 }
 
 #[tauri::command]
