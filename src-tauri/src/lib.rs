@@ -1,6 +1,7 @@
 #![allow(warnings)]
 #![allow(clippy::all)]
 mod commands;
+mod config;
 mod db;
 mod diff;
 mod error;

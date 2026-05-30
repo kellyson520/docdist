@@ -626,6 +626,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "chrono",
+ "dirs-next",
  "notify",
  "r2d2",
  "r2d2_sqlite",
