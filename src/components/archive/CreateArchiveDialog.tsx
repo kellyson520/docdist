@@ -1,0 +1,105 @@
+import { useState } from 'react';
+import { TagBadge } from '../common/TagBadge';
+import { X, Plus } from 'lucide-react';
+
+interface CreateArchiveDialogProps {
+  defaultPath: string;
+  onConfirm: (path: string, note: string, tags: string[]) => void;
+  onCancel: () => void;
+}
+
+export function CreateArchiveDialog({ defaultPath, onConfirm, onCancel }: CreateArchiveDialogProps) {
+  const [path, setPath] = useState(defaultPath);
+  const [note, setNote] = useState('');
+  const [tags, setTags] = useState<string[]>([]);
+  const [tagInput, setTagInput] = useState('');
+
+  const addTag = () => {
+    const tag = tagInput.trim();
+    if (tag && !tags.includes(tag)) {
+      setTags([...tags, tag]);
+      setTagInput('');
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
+      <div className="bg-white rounded-xl shadow-xl p-6 w-[480px] animate-fade-in">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold">新建存档</h3>
+          <button onClick={onCancel} className="p-1 hover:bg-gray-100 rounded">
+            <X className="w-5 h-5 text-gray-400" />
+          </button>
+        </div>
+
+        <div className="space-y-4">
+          {/* File Path */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">文件路径</label>
+            <input
+              type="text"
+              value={path}
+              onChange={(e) => setPath(e.target.value)}
+              placeholder="/path/to/file"
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+            />
+          </div>
+
+          {/* Note */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">备注</label>
+            <textarea
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="添加备注说明..."
+              rows={3}
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none"
+            />
+          </div>
+
+          {/* Tags */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">标签</label>
+            <div className="flex flex-wrap gap-1 mb-2">
+              {tags.map((tag) => (
+                <TagBadge key={tag} tag={tag} onRemove={() => setTags(tags.filter((t) => t !== tag))} />
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={tagInput}
+                onChange={(e) => setTagInput(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addTag())}
+                placeholder="输入标签..."
+                className="flex-1 px-3 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+              />
+              <button
+                onClick={addTag}
+                className="px-3 py-1.5 bg-gray-100 text-gray-600 rounded-lg text-sm hover:bg-gray-200 transition"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-3 mt-6">
+          <button
+            onClick={onCancel}
+            className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition"
+          >
+            取消
+          </button>
+          <button
+            onClick={() => onConfirm(path, note, tags)}
+            disabled={!path.trim()}
+            className="px-4 py-2 text-sm bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition disabled:opacity-50"
+          >
+            创建存档
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

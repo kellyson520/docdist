@@ -1,0 +1,28 @@
+[package]
+name = "zhuiguang-lite"
+version = "0.1.0"
+edition = "2021"
+description = "轻量级文件历史管理工具"
+
+[dependencies]
+tauri = { version = "1.5", features = ["shell-open", "dialog-open"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+rusqlite = { version = "0.30", features = ["bundled"] }
+r2d2 = "0.8"
+r2d2_sqlite = "0.23"
+tokio = { version = "1.35", features = ["full"] }
+notify = "6.0"
+similar = "2.3"
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1.6", features = ["v4"] }
+sha2 = "0.10"
+xxhash-rust = { version = "0.8", features = ["xxh3"] }
+anyhow = "1.0"
+thiserror = "1.0"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+walkdir = "2.4"
+
+[build-dependencies]
+tauri-build = { version = "1.5", features = [] }
