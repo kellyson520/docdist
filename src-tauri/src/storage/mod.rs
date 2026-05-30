@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use xxhash_rust::xxh3::xxh3_64;
 
 const CHUNK_SIZE: usize = 4096; // 4KB

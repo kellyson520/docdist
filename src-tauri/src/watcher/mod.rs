@@ -2,6 +2,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use notify::{Watcher, RecursiveMode, Event, EventKind};
 
+#[allow(dead_code)]
 #[derive(Clone, serde::Serialize)]
 pub struct FileChangeEvent {
     pub path: String,
