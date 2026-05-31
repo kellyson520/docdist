@@ -295,15 +295,21 @@ pub async fn update_config(
     // 先保存到磁盘，失败则不更新内存状态，保证一致性
     new_config.save(&state.data_dir)?;
 
-    let mut config = state.config.lock().unwrap_or_else(|e| e.into_inner());
-    *config = new_config;
-
-    // 如果 watcher 配置变了，应用到 watcher
+    // 提取 watcher 配置副本，然后释放 config 锁再锁 watcher，避免 ABBA 死锁
+    // （start_watcher 锁序为 watcher→config，这里必须先放 config 再锁 watcher）
+    let (exclude_patterns, debounce_secs) = {
+        let mut config = state.config.lock().unwrap_or_else(|e| e.into_inner());
+        *config = new_config;
+        (
+            config.watcher.exclude_patterns.clone(),
+            config.watcher.auto_archive_delay,
+        )
+    };
+    // config 锁已释放，安全获取 watcher 锁
     let mut watcher = state.watcher.lock().unwrap_or_else(|e| e.into_inner());
-    watcher.set_exclude_patterns(config.watcher.exclude_patterns.clone());
-    watcher.set_debounce_duration(std::time::Duration::from_secs(
-        config.watcher.auto_archive_delay,
-    ));
+    watcher.set_exclude_patterns(exclude_patterns);
+    watcher
+        .set_debounce_duration(std::time::Duration::from_secs(debounce_secs));
 
     Ok(())
 }

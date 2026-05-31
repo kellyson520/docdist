@@ -170,7 +170,6 @@ impl FileWatcher {
         let pending_debounce = self.pending_changes.clone();
         let callback_debounce = self.auto_archive_cb.clone();
         let event_tx_debounce = self.event_sender.clone();
-        let triggered_debounce = self.triggered_paths.clone();
 
         let mut watcher = notify::recommended_watcher(
             move |res: Result<Event, notify::Error>| {
@@ -284,17 +283,6 @@ impl FileWatcher {
                 }
 
                 for path in to_process {
-                    // 去重检查
-                    {
-                        let mut trig = triggered_debounce
-                            .lock()
-                            .unwrap_or_else(|e| e.into_inner());
-                        if trig.contains_key(&path) {
-                            continue;
-                        }
-                        trig.insert(path.clone(), true);
-                    }
-
                     tracing::info!("Auto-archive triggered for: {}", path);
 
                     // 发送前端通知

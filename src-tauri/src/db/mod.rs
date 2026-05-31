@@ -169,7 +169,7 @@ pub fn get_archives(
     if let Some(s) = search {
         if !s.is_empty() {
             sql.push_str(
-                " AND (file_name LIKE ? ESCAPE '\\' OR note LIKE ? ESCAPE '\\')",
+                " AND (file_name LIKE ? ESCAPE '\\' OR note LIKE ? ESCAPE '\\' OR tags LIKE ? ESCAPE '\\')",
             );
             // 转义 LIKE 通配符，防止用户输入的 % 和 _ 被当作通配符
             let escaped = s
@@ -177,6 +177,7 @@ pub fn get_archives(
                 .replace('%', "\\%")
                 .replace('_', "\\_");
             let pattern = format!("%{}%", escaped);
+            param_values.push(Box::new(pattern.clone()));
             param_values.push(Box::new(pattern.clone()));
             param_values.push(Box::new(pattern));
         }
