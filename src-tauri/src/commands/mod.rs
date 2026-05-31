@@ -4,6 +4,7 @@ use crate::diff::DiffResult;
 use crate::error::AppError;
 use crate::storage;
 use crate::AppState;
+use tauri::Manager;
 use tauri::State;
 
 // ==================== 存档管理 ====================
