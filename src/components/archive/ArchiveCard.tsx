@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, memo } from 'react';
 import type { Archive } from '../../types';
 import { formatFileSize } from '../../utils/format';
 import { formatSmartTime } from '../../utils/time';
@@ -21,7 +21,7 @@ interface ArchiveCardProps {
   onToggleSelect?: () => void;
 }
 
-export function ArchiveCard({
+function ArchiveCardInner({
   archive,
   isSelected,
   isMultiSelected = false,
@@ -200,3 +200,17 @@ export function ArchiveCard({
     </div>
   );
 }
+
+/** 用 React.memo 包裹，避免列表中不必要的重渲染 */
+export const ArchiveCard = memo(ArchiveCardInner, (prev, next) => {
+  return (
+    prev.archive === next.archive &&
+    prev.isSelected === next.isSelected &&
+    prev.isMultiSelected === next.isMultiSelected &&
+    prev.onSelect === next.onSelect &&
+    prev.onRestore === next.onRestore &&
+    prev.onDelete === next.onDelete &&
+    prev.onCompare === next.onCompare &&
+    prev.onToggleSelect === next.onToggleSelect
+  );
+});

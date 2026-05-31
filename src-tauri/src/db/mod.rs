@@ -46,20 +46,29 @@ pub fn init_database(
             note TEXT DEFAULT '',
             tags TEXT DEFAULT '[]',
             parent_id TEXT,
-            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            CHECK(file_path != ''),
+            CHECK(file_name != ''),
+            CHECK(checksum != ''),
+            CHECK(file_size >= 0),
+            CHECK(chunk_count >= 0)
         );
         CREATE TABLE IF NOT EXISTS chunks (
             hash TEXT PRIMARY KEY,
             size INTEGER NOT NULL,
             ref_count INTEGER NOT NULL DEFAULT 1,
             storage_path TEXT NOT NULL,
-            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            CHECK(hash != ''),
+            CHECK(size >= 0),
+            CHECK(ref_count >= 0)
         );
         CREATE TABLE IF NOT EXISTS archive_chunks (
             archive_id TEXT NOT NULL,
             chunk_hash TEXT NOT NULL,
             chunk_index INTEGER NOT NULL,
-            PRIMARY KEY (archive_id, chunk_index)
+            PRIMARY KEY (archive_id, chunk_index),
+            CHECK(chunk_index >= 0)
         );
         CREATE INDEX IF NOT EXISTS idx_archives_path
             ON archives(file_path);
@@ -593,20 +602,29 @@ mod tests {
                 note TEXT DEFAULT '',
                 tags TEXT DEFAULT '[]',
                 parent_id TEXT,
-                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                CHECK(file_path != ''),
+                CHECK(file_name != ''),
+                CHECK(checksum != ''),
+                CHECK(file_size >= 0),
+                CHECK(chunk_count >= 0)
             );
             CREATE TABLE IF NOT EXISTS chunks (
                 hash TEXT PRIMARY KEY,
                 size INTEGER NOT NULL,
                 ref_count INTEGER NOT NULL DEFAULT 1,
                 storage_path TEXT NOT NULL,
-                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                CHECK(hash != ''),
+                CHECK(size >= 0),
+                CHECK(ref_count >= 0)
             );
             CREATE TABLE IF NOT EXISTS archive_chunks (
                 archive_id TEXT NOT NULL,
                 chunk_hash TEXT NOT NULL,
                 chunk_index INTEGER NOT NULL,
-                PRIMARY KEY (archive_id, chunk_index)
+                PRIMARY KEY (archive_id, chunk_index),
+                CHECK(chunk_index >= 0)
             );
             CREATE INDEX IF NOT EXISTS idx_archives_path
                 ON archives(file_path);
@@ -1365,5 +1383,294 @@ mod tests {
         assert_eq!(stats["total_chunks"], 0);
         assert_eq!(stats["total_chunk_size"], 0);
         assert_eq!(stats["avg_refs"], 0.0);
+    }
+
+    // ============================================================
+    // CHECK 约束验证测试
+    // ============================================================
+
+    /// 辅助函数：用原始 SQL 直接插入 archive，绕过 Rust 代码中的验证
+    fn raw_insert_archive(
+        conn: &rusqlite::Connection,
+        id: &str,
+        file_path: &str,
+        file_name: &str,
+        file_size: i64,
+        checksum: &str,
+        chunk_count: i64,
+    ) -> Result<usize, rusqlite::Error> {
+        conn.execute(
+            "INSERT INTO archives (id, file_path, file_name, file_size, checksum, chunk_count)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![id, file_path, file_name, file_size, checksum, chunk_count],
+        )
+    }
+
+    /// 辅助函数：用原始 SQL 直接插入 chunk
+    fn raw_insert_chunk(
+        conn: &rusqlite::Connection,
+        hash: &str,
+        size: i64,
+        ref_count: i64,
+        storage_path: &str,
+    ) -> Result<usize, rusqlite::Error> {
+        conn.execute(
+            "INSERT INTO chunks (hash, size, ref_count, storage_path)
+             VALUES (?1, ?2, ?3, ?4)",
+            params![hash, size, ref_count, storage_path],
+        )
+    }
+
+    /// 辅助函数：用原始 SQL 直接插入 archive_chunk
+    fn raw_insert_archive_chunk(
+        conn: &rusqlite::Connection,
+        archive_id: &str,
+        chunk_hash: &str,
+        chunk_index: i64,
+    ) -> Result<usize, rusqlite::Error> {
+        conn.execute(
+            "INSERT INTO archive_chunks (archive_id, chunk_hash, chunk_index)
+             VALUES (?1, ?2, ?3)",
+            params![archive_id, chunk_hash, chunk_index],
+        )
+    }
+
+    // --- archives 表 CHECK 约束 ---
+
+    #[test]
+    fn test_check_archives_file_path_not_empty() {
+        let pool = setup_db();
+        let conn = pool.get().unwrap();
+        let err =
+            raw_insert_archive(&conn, "chk1", "", "file.pdf", 100, "hash1", 0)
+                .unwrap_err();
+        assert!(
+            format!("{}", err).contains("CHECK"),
+            "期望 CHECK 约束失败，实际: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_check_archives_file_name_not_empty() {
+        let pool = setup_db();
+        let conn = pool.get().unwrap();
+        let err = raw_insert_archive(
+            &conn,
+            "chk2",
+            "/path/f.pdf",
+            "",
+            100,
+            "hash2",
+            0,
+        )
+        .unwrap_err();
+        assert!(
+            format!("{}", err).contains("CHECK"),
+            "期望 CHECK 约束失败，实际: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_check_archives_checksum_not_empty() {
+        let pool = setup_db();
+        let conn = pool.get().unwrap();
+        let err = raw_insert_archive(
+            &conn,
+            "chk3",
+            "/path/f.pdf",
+            "f.pdf",
+            100,
+            "",
+            0,
+        )
+        .unwrap_err();
+        assert!(
+            format!("{}", err).contains("CHECK"),
+            "期望 CHECK 约束失败，实际: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_check_archives_file_size_non_negative() {
+        let pool = setup_db();
+        let conn = pool.get().unwrap();
+        let err = raw_insert_archive(
+            &conn,
+            "chk4",
+            "/path/f.pdf",
+            "f.pdf",
+            -1,
+            "hash4",
+            0,
+        )
+        .unwrap_err();
+        assert!(
+            format!("{}", err).contains("CHECK"),
+            "期望 CHECK 约束失败（file_size < 0），实际: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_check_archives_file_size_zero_allowed() {
+        let pool = setup_db();
+        let conn = pool.get().unwrap();
+        // file_size=0 应该成功
+        raw_insert_archive(
+            &conn,
+            "chk4b",
+            "/path/f.pdf",
+            "f.pdf",
+            0,
+            "hash4b",
+            0,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn test_check_archives_chunk_count_non_negative() {
+        let pool = setup_db();
+        let conn = pool.get().unwrap();
+        let err = raw_insert_archive(
+            &conn,
+            "chk5",
+            "/path/f.pdf",
+            "f.pdf",
+            100,
+            "hash5",
+            -1,
+        )
+        .unwrap_err();
+        assert!(
+            format!("{}", err).contains("CHECK"),
+            "期望 CHECK 约束失败（chunk_count < 0），实际: {}",
+            err
+        );
+    }
+
+    // --- chunks 表 CHECK 约束 ---
+
+    #[test]
+    fn test_check_chunks_hash_not_empty() {
+        let pool = setup_db();
+        let conn = pool.get().unwrap();
+        let err = raw_insert_chunk(&conn, "", 100, 1, "ab/ab1234").unwrap_err();
+        assert!(
+            format!("{}", err).contains("CHECK"),
+            "期望 CHECK 约束失败（hash 为空），实际: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_check_chunks_size_non_negative() {
+        let pool = setup_db();
+        let conn = pool.get().unwrap();
+        let err =
+            raw_insert_chunk(&conn, "ab12cd345678", -1, 1, "ab/ab12cd345678")
+                .unwrap_err();
+        assert!(
+            format!("{}", err).contains("CHECK"),
+            "期望 CHECK 约束失败（size < 0），实际: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_check_chunks_size_zero_allowed() {
+        let pool = setup_db();
+        let conn = pool.get().unwrap();
+        // size=0 应该成功
+        raw_insert_chunk(&conn, "ab12cd345678", 0, 1, "ab/ab12cd345678")
+            .unwrap();
+    }
+
+    #[test]
+    fn test_check_chunks_ref_count_non_negative() {
+        let pool = setup_db();
+        let conn = pool.get().unwrap();
+        let err =
+            raw_insert_chunk(&conn, "ab12cd345678", 100, -1, "ab/ab12cd345678")
+                .unwrap_err();
+        assert!(
+            format!("{}", err).contains("CHECK"),
+            "期望 CHECK 约束失败（ref_count < 0），实际: {}",
+            err
+        );
+    }
+
+    // --- archive_chunks 表 CHECK 约束 ---
+
+    #[test]
+    fn test_check_archive_chunks_index_non_negative() {
+        let pool = setup_db();
+        let conn = pool.get().unwrap();
+        // 先创建一个合法的 archive
+        raw_insert_archive(
+            &conn,
+            "ac1",
+            "/path/f.pdf",
+            "f.pdf",
+            100,
+            "hash1",
+            0,
+        )
+        .unwrap();
+
+        let err = raw_insert_archive_chunk(&conn, "ac1", "chunk_hash1", -1)
+            .unwrap_err();
+        assert!(
+            format!("{}", err).contains("CHECK"),
+            "期望 CHECK 约束失败（chunk_index < 0），实际: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_check_archive_chunks_index_zero_allowed() {
+        let pool = setup_db();
+        let conn = pool.get().unwrap();
+        raw_insert_archive(
+            &conn,
+            "ac2",
+            "/path/f.pdf",
+            "f.pdf",
+            100,
+            "hash2",
+            0,
+        )
+        .unwrap();
+
+        // chunk_index=0 应该成功
+        raw_insert_archive_chunk(&conn, "ac2", "chunk_hash2", 0).unwrap();
+    }
+
+    // --- 正常数据不受 CHECK 约束影响 ---
+
+    #[test]
+    fn test_check_constraints_valid_data_passes() {
+        let pool = setup_db();
+        let archive = make_archive("valid1", "/docs/valid.pdf", "valid.pdf");
+        insert_archive(&pool, &archive).unwrap();
+
+        let conn = pool.get().unwrap();
+        raw_insert_chunk(
+            &conn,
+            "abcdef1234567890",
+            1024,
+            2,
+            "ab/abcdef1234567890",
+        )
+        .unwrap();
+        raw_insert_archive_chunk(&conn, "valid1", "abcdef1234567890", 0)
+            .unwrap();
+
+        // 验证全部成功读回
+        let got = get_archive(&pool, "valid1").unwrap();
+        assert!(got.is_some());
     }
 }

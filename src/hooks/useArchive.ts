@@ -3,10 +3,23 @@ import { shallow } from 'zustand/shallow';
 import type { Archive } from '../types';
 
 export function useArchive() {
-  const archives = useArchiveStore((s) => s.archives);
-  const selectedIds = useArchiveStore((s) => s.selectedIds);
-  const storeActions = useArchiveStore(
+  const {
+    archives,
+    selectedIds,
+    fetchArchives,
+    createArchive,
+    restoreArchive,
+    deleteArchive,
+    selectArchive,
+    setSearchQuery,
+    searchQuery,
+    loading,
+    error,
+    selectedArchive,
+  } = useArchiveStore(
     (s) => ({
+      archives: s.archives,
+      selectedIds: s.selectedIds,
       fetchArchives: s.fetchArchives,
       createArchive: s.createArchive,
       restoreArchive: s.restoreArchive,
@@ -36,9 +49,18 @@ export function useArchive() {
   );
 
   return {
-    ...storeActions,
     archives,
     selectedIds,
+    fetchArchives,
+    createArchive,
+    restoreArchive,
+    deleteArchive,
+    selectArchive,
+    setSearchQuery,
+    searchQuery,
+    loading,
+    error,
+    selectedArchive,
     filteredArchives,
     archiveByFile,
     totalSize,
