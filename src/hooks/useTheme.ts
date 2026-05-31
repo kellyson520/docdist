@@ -6,8 +6,11 @@ type Theme = 'light' | 'dark' | 'system';
 
 export function useTheme() {
   const [theme, setThemeState] = useState<Theme>(() => {
-    const stored = localStorage.getItem('theme') as Theme;
-    return stored || 'system';
+    const stored = localStorage.getItem('theme');
+    if (stored && ['light', 'dark', 'system'].includes(stored)) {
+      return stored as Theme;
+    }
+    return 'system';
   });
 
   const [resolvedTheme, setResolvedTheme] = useState<'light' | 'dark'>('light');

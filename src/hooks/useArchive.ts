@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { useArchiveStore } from '../stores/archiveStore';
 import { shallow } from 'zustand/shallow';
 import type { Archive } from '../types';
@@ -40,12 +41,19 @@ export function useArchive() {
     return archives.filter((a) => a.file_path === filePath);
   };
 
-  const totalSize = archives.reduce((sum, a) => sum + a.file_size, 0);
+  const totalSize = useMemo(
+    () => archives.reduce((sum, a) => sum + a.file_size, 0),
+    [archives],
+  );
 
-  const uniqueFiles = new Set(archives.map((a) => a.file_path)).size;
+  const uniqueFiles = useMemo(
+    () => new Set(archives.map((a) => a.file_path)).size,
+    [archives],
+  );
 
-  const selectedArchives = archives.filter((a) =>
-    selectedIds.has(a.id)
+  const selectedArchives = useMemo(
+    () => archives.filter((a) => selectedIds.has(a.id)),
+    [archives, selectedIds],
   );
 
   return {

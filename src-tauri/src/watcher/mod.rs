@@ -1,6 +1,7 @@
 use notify::{Event, EventKind, RecursiveMode, Watcher};
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::atomic::AtomicU64;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -20,8 +21,8 @@ pub type AutoArchiveCallback = Arc<dyn Fn(String) + Send + Sync + 'static>;
 pub struct FileWatcher {
     watcher: Option<notify::RecommendedWatcher>,
     watched_paths: Arc<Mutex<Vec<String>>>,
-    /// 防抖：文件变化后等待 debounce_duration 再触发
-    debounce_duration: Duration,
+    /// 防抖：文件变化后等待 debounce_duration 再触发（共享给工作线程）
+    debounce_ms: Arc<AtomicU64>,
     /// 排除模式（glob-like 简单匹配）
     exclude_patterns: Arc<Mutex<Vec<String>>>,
     /// 待处理的变更（防抖缓冲）
@@ -43,7 +44,7 @@ impl FileWatcher {
         Self {
             watcher: None,
             watched_paths: Arc::new(Mutex::new(Vec::new())),
-            debounce_duration: Duration::from_secs(3),
+            debounce_ms: Arc::new(AtomicU64::new(3000)),
             exclude_patterns: Arc::new(Mutex::new(vec![
                 "*.tmp".into(),
                 "*.swp".into(),
@@ -79,7 +80,8 @@ impl FileWatcher {
 
     /// 设置防抖持续时间
     pub fn set_debounce_duration(&mut self, duration: Duration) {
-        self.debounce_duration = duration;
+        self.debounce_ms
+            .store(duration.as_millis() as u64, Ordering::SeqCst);
     }
 
     /// 设置自动存档回调
@@ -134,7 +136,7 @@ impl FileWatcher {
             self.set_app_handle(handle);
         }
 
-        let debounce = self.debounce_duration;
+        let debounce_ms = self.debounce_ms.clone();
 
         let watched = self.watched_paths.clone();
         let exclude = self.exclude_patterns.clone();
@@ -237,7 +239,12 @@ impl FileWatcher {
                 {
                     let mut p = pending_debounce.lock().unwrap();
                     p.retain(|path, last_modified| {
-                        if now.duration_since(*last_modified) >= debounce {
+                        let current_debounce = Duration::from_millis(
+                            debounce_ms.load(Ordering::Relaxed),
+                        );
+                        if now.duration_since(*last_modified)
+                            >= current_debounce
+                        {
                             to_process.push(path.clone());
                             false
                         } else {

@@ -649,9 +649,8 @@ describe('useArchiveStore', () => {
     it('should set error on failure', async () => {
       mockInvoke.mockRejectedValueOnce(new Error('Compare failed'))
 
-      await expect(
-        useArchiveStore.getState().compareArchivesEnhanced('id1', 'id2')
-      ).rejects.toThrow('Compare failed')
+      // 不再抛出异常，错误设置到store中
+      await useArchiveStore.getState().compareArchivesEnhanced('id1', 'id2')
 
       const { error, loading } = useArchiveStore.getState()
       expect(error).toBe('Error: Compare failed')

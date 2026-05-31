@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useArchiveStore } from '../../stores/archiveStore';
+import { useShallow } from 'zustand/react/shallow';
 import { ArchiveCard } from './ArchiveCard';
 import { CreateArchiveDialog } from './CreateArchiveDialog';
 import { SearchBar } from '../common/SearchBar';
@@ -15,10 +16,29 @@ export function ArchiveList() {
   const {
     archives, selectedArchive, loading, searchQuery,
     selectedIds, page, hasMore,
-    fetchArchives, fetchArchivesPaginated, createArchive, restoreArchive, deleteArchive,
-    deleteArchivesBatch, compareArchives, compareArchivesEnhanced, selectArchive, setSearchQuery, setView,
-    toggleSelect, selectAll, clearSelection,
-  } = useArchiveStore();
+  } = useArchiveStore(useShallow((s) => ({
+    archives: s.archives,
+    selectedArchive: s.selectedArchive,
+    loading: s.loading,
+    searchQuery: s.searchQuery,
+    selectedIds: s.selectedIds,
+    page: s.page,
+    hasMore: s.hasMore,
+  })));
+
+  const fetchArchives = useArchiveStore((s) => s.fetchArchives);
+  const fetchArchivesPaginated = useArchiveStore((s) => s.fetchArchivesPaginated);
+  const createArchive = useArchiveStore((s) => s.createArchive);
+  const restoreArchive = useArchiveStore((s) => s.restoreArchive);
+  const deleteArchive = useArchiveStore((s) => s.deleteArchive);
+  const deleteArchivesBatch = useArchiveStore((s) => s.deleteArchivesBatch);
+  const compareArchivesEnhanced = useArchiveStore((s) => s.compareArchivesEnhanced);
+  const selectArchive = useArchiveStore((s) => s.selectArchive);
+  const setSearchQuery = useArchiveStore((s) => s.setSearchQuery);
+  const setView = useArchiveStore((s) => s.setView);
+  const toggleSelect = useArchiveStore((s) => s.toggleSelect);
+  const selectAll = useArchiveStore((s) => s.selectAll);
+  const clearSelection = useArchiveStore((s) => s.clearSelection);
 
   const [showCreate, setShowCreate] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
@@ -31,7 +51,7 @@ export function ArchiveList() {
     return () => clearTimeout(timer);
   }, [searchQuery, fetchArchives]);
 
-  const handleCreate = async () => {
+  const handleCreate = useCallback(async () => {
     const selected = await open({
       multiple: false,
       title: '选择要存档的文件',
@@ -40,14 +60,14 @@ export function ArchiveList() {
       setCreatePath(selected as string);
       setShowCreate(true);
     }
-  };
+  }, []);
 
-  const handleBatchDelete = async () => {
+  const handleBatchDelete = useCallback(async () => {
     const ids = Array.from(selectedIds);
     if (ids.length > 0) {
       await deleteArchivesBatch(ids);
     }
-  };
+  }, [selectedIds, deleteArchivesBatch]);
 
   const hasSelection = selectedIds.size > 0;
 
@@ -176,8 +196,8 @@ export function ArchiveList() {
       {showCreate && (
         <CreateArchiveDialog
           defaultPath={createPath}
-          onConfirm={(path, note, tags) => {
-            createArchive(path, note, tags);
+          onConfirm={async (path, note, tags) => {
+            await createArchive(path, note, tags);
             setShowCreate(false);
           }}
           onCancel={() => setShowCreate(false)}

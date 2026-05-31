@@ -1,4 +1,4 @@
-import { useState, memo } from 'react';
+import { useState, useEffect, useRef, memo } from 'react';
 import type { Archive } from '../../types';
 import { formatFileSize } from '../../utils/format';
 import { formatSmartTime } from '../../utils/time';
@@ -34,6 +34,19 @@ function ArchiveCardInner({
   const [showMenu, setShowMenu] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
   const updateArchive = useArchiveStore((s) => s.updateArchive);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  // 点击外部关闭下拉菜单
+  useEffect(() => {
+    if (!showMenu) return;
+    const handleMouseDown = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setShowMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleMouseDown);
+    return () => document.removeEventListener('mousedown', handleMouseDown);
+  }, [showMenu]);
 
   // 文件类型图标颜色
   const getFileColor = (name: string) => {
@@ -121,7 +134,7 @@ function ArchiveCardInner({
             >
               <GitCompare className="w-3.5 h-3.5 text-blue-500" />
             </button>
-            <div className="relative">
+            <div className="relative" ref={menuRef}>
               <button
                 onClick={(e) => { e.stopPropagation(); setShowMenu(!showMenu); }}
                 className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition"

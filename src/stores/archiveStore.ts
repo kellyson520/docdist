@@ -163,7 +163,7 @@ export const useArchiveStore = create<ArchiveState>((set, get) => ({
   // ==================== 存档 CRUD ====================
 
   fetchArchives: async (filePath?: string, search?: string) => {
-    set({ loading: true, error: null });
+    set({ loading: true, error: null, page: 1, hasMore: false, totalCount: 0 });
     try {
       const archives = await invoke<Archive[]>('list_archives', {
         filePath: filePath || null,
@@ -299,7 +299,6 @@ export const useArchiveStore = create<ArchiveState>((set, get) => ({
       toast.info('对比完成', '增强差异分析已生成');
     } catch (err) {
       set({ error: String(err), loading: false });
-      throw err;
     }
   },
 

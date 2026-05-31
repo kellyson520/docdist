@@ -18,6 +18,9 @@ export interface Toast {
   dismissible: boolean;
 }
 
+// 跟踪自动消失的 timer，以便 clearAll 时清理
+const pendingTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
 interface ToastState {
   toasts: Toast[];
   addToast: (toast: Omit<Toast, 'id'>) => void;
@@ -41,11 +44,13 @@ export const useToastStore = create<ToastState>((set) => ({
 
     // 自动消失
     if (newToast.duration > 0) {
-      setTimeout(() => {
+      const timerId = setTimeout(() => {
+        pendingTimers.delete(id);
         set((state) => ({
           toasts: state.toasts.filter(t => t.id !== id),
         }));
       }, newToast.duration);
+      pendingTimers.set(id, timerId);
     }
   },
 
@@ -55,7 +60,11 @@ export const useToastStore = create<ToastState>((set) => ({
     }));
   },
 
-  clearAll: () => set({ toasts: [] }),
+  clearAll: () => {
+    pendingTimers.forEach((timerId) => clearTimeout(timerId));
+    pendingTimers.clear();
+    set({ toasts: [] });
+  },
 }));
 
 /** 便捷方法 */

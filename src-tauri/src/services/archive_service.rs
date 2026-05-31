@@ -148,7 +148,8 @@ fn validate_target_path(path: &Path) -> Result<(), AppError> {
     let path_str = path.to_string_lossy().to_string();
     let forbidden = ["/etc", "/sys", "/proc", "/dev", "/root", "/boot"];
     for prefix in &forbidden {
-        if path_str.starts_with(prefix) {
+        if path_str == *prefix || path_str.starts_with(&format!("{}/", prefix))
+        {
             return Err(AppError::Other(format!(
                 "不允许写入系统目录: {}",
                 prefix
@@ -187,9 +188,17 @@ impl ArchiveService {
         let path = Path::new(file_path);
         validate_file_path(path)?;
 
+        // TODO: 当前先写磁盘再写数据库，若数据库事务失败会产生孤儿 chunk 文件。
+        // 更优方案是先写临时文件，事务成功后再移动到最终位置。
         // 分块存储文件（使用配置的 chunk_size）
         let (chunk_hashes, chunk_sizes, file_size, checksum) =
             storage::store_file(&self.chunks_dir, path, self.chunk_size)?;
+
+        // 记录已写入的 chunk 路径，事务失败时清理孤儿文件
+        let chunk_paths: Vec<std::path::PathBuf> = chunk_hashes
+            .iter()
+            .map(|hash| self.chunks_dir.join(&hash[..2]).join(hash))
+            .collect();
 
         let file_name = path
             .file_name()
@@ -272,7 +281,18 @@ impl ArchiveService {
             ],
         )?;
 
-        tx.commit()?;
+        tx.commit().map_err(|e| {
+            tracing::warn!(
+                "DB transaction failed, cleaning up {} chunk files",
+                chunk_paths.len()
+            );
+            for p in &chunk_paths {
+                if p.exists() {
+                    let _ = std::fs::remove_file(p);
+                }
+            }
+            crate::error::AppError::from(e)
+        })?;
 
         tracing::info!(
             "Archive created: {} ({}, {} chunks)",

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { TagBadge } from '../common/TagBadge';
 import { X, Plus } from 'lucide-react';
 
@@ -14,6 +14,15 @@ export function EditArchiveDialog({ initialNote, initialTags, onConfirm, onCance
   const [tags, setTags] = useState<string[]>(initialTags);
   const [tagInput, setTagInput] = useState('');
 
+  // Escape 键关闭
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onCancel();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onCancel]);
+
   const addTag = () => {
     const tag = tagInput.trim();
     if (tag && !tags.includes(tag)) {
@@ -23,8 +32,8 @@ export function EditArchiveDialog({ initialNote, initialTags, onConfirm, onCance
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6 w-[480px] animate-fade-in">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={onCancel}>
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6 w-[480px] animate-fade-in" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100">编辑存档</h3>
           <button onClick={onCancel} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded">

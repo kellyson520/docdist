@@ -161,7 +161,7 @@ export function WatcherPanel() {
                 <p className="text-xs text-gray-400 dark:text-gray-500 text-center py-1">暂无事件</p>
               ) : (
                 recentEvents.map((evt, i) => (
-                  <div key={i} className="flex items-start gap-2 px-2 py-1">
+                  <div key={`${evt.path}-${i}`} className="flex items-start gap-2 px-2 py-1">
                     {evt.event_type === 'auto_archive_triggered' ? (
                       <AlertCircle className="w-3 h-3 text-blue-500 mt-0.5 flex-shrink-0" />
                     ) : (

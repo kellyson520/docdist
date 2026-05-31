@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useArchiveStore } from './stores/archiveStore';
+import { shallow } from 'zustand/shallow';
 import { ArchiveList } from './components/archive/ArchiveList';
 import { TimelineView } from './components/timeline/TimelineView';
 import { DiffViewer } from './components/diff/DiffViewer';
@@ -20,7 +21,16 @@ import type { ArchiveState } from './stores/archiveStore';
 type View = ArchiveState['view'];
 
 export default function App() {
-  const { fetchArchives, fetchStatistics, statistics, view, setView } = useArchiveStore();
+  const { fetchArchives, fetchStatistics, statistics, view, setView } = useArchiveStore(
+    (s) => ({
+      fetchArchives: s.fetchArchives,
+      fetchStatistics: s.fetchStatistics,
+      statistics: s.statistics,
+      view: s.view,
+      setView: s.setView,
+    }),
+    shallow,
+  );
   const [isMini, setIsMini] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showLogViewer, setShowLogViewer] = useState(false);
@@ -225,7 +235,7 @@ export default function App() {
         </div>
 
         {/* Right sidebar — Watcher Panel */}
-        <div className="w-72 bg-gray-50 dark:bg-gray-900 border-l border-gray-200 dark:border-gray-700 overflow-y-auto p-3 space-y-3 transition-colors">
+        <div className="hidden lg:block w-72 bg-gray-50 dark:bg-gray-900 border-l border-gray-200 dark:border-gray-700 overflow-y-auto p-3 space-y-3 transition-colors">
           <WatcherPanel />
         </div>
       </div>

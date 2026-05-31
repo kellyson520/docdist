@@ -4,6 +4,7 @@ import { formatFileSize } from '../../utils/format';
 import { formatSmartTime } from '../../utils/time';
 import { TagBadge } from '../common/TagBadge';
 import { Clock, RotateCcw, Trash2, FileText, GitCompare, Filter } from 'lucide-react';
+import { ConfirmDialog } from '../common/ConfirmDialog';
 
 type SortOrder = 'newest' | 'oldest';
 type FilterTag = string | null;
@@ -14,6 +15,7 @@ export function TimelineView() {
   const [filterTag, setFilterTag] = useState<FilterTag>(null);
   const [showFilters, setShowFilters] = useState(false);
   const [selectedForCompare, setSelectedForCompare] = useState<string | null>(null);
+  const [confirmAction, setConfirmAction] = useState<{ type: 'restore' | 'delete'; id: string } | null>(null);
 
   useEffect(() => {
     if (selectedArchive) {
@@ -29,6 +31,16 @@ export function TimelineView() {
       setSelectedForCompare(archiveId);
     }
   }, [selectedForCompare, compareArchives]);
+
+  const handleConfirm = useCallback(() => {
+    if (!confirmAction) return;
+    if (confirmAction.type === 'restore') {
+      restoreArchive(confirmAction.id);
+    } else {
+      deleteArchive(confirmAction.id);
+    }
+    setConfirmAction(null);
+  }, [confirmAction, restoreArchive, deleteArchive]);
 
   // Get all unique tags from timeline
   const allTags = Array.from(new Set(timeline.flatMap(a => a.tags)));
@@ -170,14 +182,14 @@ export function TimelineView() {
                         <GitCompare className="w-3.5 h-3.5" />
                       </button>
                       <button
-                        onClick={() => restoreArchive(archive.id)}
+                        onClick={() => setConfirmAction({ type: 'restore', id: archive.id })}
                         className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-gray-400"
                         title="恢复此版本"
                       >
                         <RotateCcw className="w-3.5 h-3.5" />
                       </button>
                       <button
-                        onClick={() => deleteArchive(archive.id)}
+                        onClick={() => setConfirmAction({ type: 'delete', id: archive.id })}
                         className="p-1 hover:bg-red-50 dark:hover:bg-red-900/20 rounded text-gray-400"
                         title="删除"
                       >
@@ -225,6 +237,13 @@ export function TimelineView() {
           )}
         </div>
       </div>
+      <ConfirmDialog
+        open={confirmAction !== null}
+        title={confirmAction?.type === 'restore' ? '确认恢复' : '确认删除'}
+        message={confirmAction?.type === 'restore' ? '确定要恢复此版本吗？' : '确定要删除此存档吗？删除后无法恢复。'}
+        onConfirm={handleConfirm}
+        onCancel={() => setConfirmAction(null)}
+      />
     </div>
   );
 }

@@ -111,7 +111,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                       ...localConfig,
                       watcher: {
                         ...localConfig.watcher,
-                        auto_archive_delay: parseInt(e.target.value) || 60,
+                        auto_archive_delay: e.target.value === '' ? 0 : (parseInt(e.target.value) || 0),
                       },
                     })
                   }
@@ -125,13 +125,13 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                 </label>
                 <input
                   type="number"
-                  value={Math.round(localConfig.watcher.max_file_size / 1024 / 1024)}
+                  value={parseFloat((localConfig.watcher.max_file_size / 1024 / 1024).toFixed(1))}
                   onChange={(e) =>
                     setLocalConfig({
                       ...localConfig,
                       watcher: {
                         ...localConfig.watcher,
-                        max_file_size: (parseInt(e.target.value) || 100) * 1024 * 1024,
+                        max_file_size: (parseFloat(e.target.value) || 100) * 1024 * 1024,
                       },
                     })
                   }
@@ -157,7 +157,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                       ...localConfig,
                       storage: {
                         ...localConfig.storage,
-                        chunk_size: (parseInt(e.target.value) || 4) * 1024,
+                        chunk_size: (parseInt(e.target.value) || 0) * 1024,
                       },
                     })
                   }

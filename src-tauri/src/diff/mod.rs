@@ -103,8 +103,18 @@ pub fn compute_diff(old_text: &str, new_text: &str) -> DiffResult {
             _ => {}
         }
 
-        current_hunk.old_lines += 1;
-        current_hunk.new_lines += 1;
+        match change.tag() {
+            ChangeTag::Equal => {
+                current_hunk.old_lines += 1;
+                current_hunk.new_lines += 1;
+            }
+            ChangeTag::Delete => {
+                current_hunk.old_lines += 1;
+            }
+            ChangeTag::Insert => {
+                current_hunk.new_lines += 1;
+            }
+        }
 
         if current_hunk.changes.len() >= HUNK_MAX_LINES
             && change.tag() == ChangeTag::Equal
