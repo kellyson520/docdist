@@ -313,7 +313,7 @@ impl ArchiveService {
                     || !a
                         .parent_id
                         .as_ref()
-                        .map_or(false, |pid| id_set.contains(pid))
+                        .is_some_and(|pid| id_set.contains(pid))
             })
             .collect();
 
