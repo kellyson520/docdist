@@ -128,19 +128,14 @@ impl ArchiveService {
         page_size: u32,
     ) -> Result<(Vec<Archive>, i64), AppError> {
         db::get_archives_paginated(
-            &self.pool,
-            file_path,
-            search,
-            page,
-            page_size,
+            &self.pool, file_path, search, page, page_size,
         )
     }
 
     /// 删除存档 — 同时清理 ref_count
     pub fn delete_archive(&self, archive_id: &str) -> Result<(), AppError> {
         // 先获取该存档的 chunks
-        let chunk_hashes =
-            db::get_archive_chunks(&self.pool, archive_id)?;
+        let chunk_hashes = db::get_archive_chunks(&self.pool, archive_id)?;
 
         // 从 archive_chunks 表删除关联
         db::delete_archive_chunks(&self.pool, archive_id)?;
@@ -217,10 +212,8 @@ impl ArchiveService {
 
         // 添加存储使用信息
         let storage_usage = storage::get_storage_usage(&self.chunks_dir)?;
-        stats["storage_chunks"] =
-            serde_json::json!(storage_usage.total_chunks);
-        stats["storage_bytes"] =
-            serde_json::json!(storage_usage.total_bytes);
+        stats["storage_chunks"] = serde_json::json!(storage_usage.total_chunks);
+        stats["storage_bytes"] = serde_json::json!(storage_usage.total_bytes);
 
         Ok(stats)
     }

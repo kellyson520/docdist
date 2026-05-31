@@ -464,9 +464,8 @@ pub fn get_unreferenced_chunks(
     pool: &DbPool,
 ) -> Result<Vec<String>, crate::error::AppError> {
     let conn = pool.get()?;
-    let mut stmt = conn.prepare(
-        "SELECT hash FROM chunks WHERE ref_count <= 0",
-    )?;
+    let mut stmt =
+        conn.prepare("SELECT hash FROM chunks WHERE ref_count <= 0")?;
     let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
     Ok(rows.filter_map(|r| r.ok()).collect())
 }

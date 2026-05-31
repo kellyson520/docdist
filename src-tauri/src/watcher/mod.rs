@@ -19,8 +19,7 @@ struct PendingChange {
 }
 
 /// 自动存档回调类型
-pub type AutoArchiveCallback =
-    Arc<dyn Fn(String) + Send + Sync + 'static>;
+pub type AutoArchiveCallback = Arc<dyn Fn(String) + Send + Sync + 'static>;
 
 pub struct FileWatcher {
     watcher: Option<notify::RecommendedWatcher>,
@@ -173,7 +172,8 @@ impl FileWatcher {
                     match event.kind {
                         EventKind::Modify(_) | EventKind::Create(_) => {
                             for path in event.paths {
-                                let path_str = path.to_string_lossy().to_string();
+                                let path_str =
+                                    path.to_string_lossy().to_string();
 
                                 // 排除检查
                                 let patterns = exclude.lock().unwrap();
@@ -200,10 +200,7 @@ impl FileWatcher {
                                 // 防抖：记录变更时间
                                 {
                                     let mut p = pending.lock().unwrap();
-                                    p.insert(
-                                        path_str.clone(),
-                                        Instant::now(),
-                                    );
+                                    p.insert(path_str.clone(), Instant::now());
                                 }
 
                                 tracing::info!(
@@ -222,7 +219,8 @@ impl FileWatcher {
                                             .format("%Y-%m-%d %H:%M:%S")
                                             .to_string(),
                                     };
-                                    let _ = handle.emit_all("file-changed", &evt);
+                                    let _ =
+                                        handle.emit_all("file-changed", &evt);
                                 }
                             }
                         }
@@ -285,10 +283,7 @@ impl FileWatcher {
                         trig.insert(path.clone(), true);
                     }
 
-                    tracing::info!(
-                        "Auto-archive triggered for: {}",
-                        path
-                    );
+                    tracing::info!("Auto-archive triggered for: {}", path);
 
                     // 发送前端通知
                     if let Some(handle) =
@@ -296,8 +291,7 @@ impl FileWatcher {
                     {
                         let evt = FileChangeEvent {
                             path: path.clone(),
-                            event_type: "auto_archive_triggered"
-                                .to_string(),
+                            event_type: "auto_archive_triggered".to_string(),
                             timestamp: chrono::Utc::now()
                                 .format("%Y-%m-%d %H:%M:%S")
                                 .to_string(),
@@ -306,9 +300,7 @@ impl FileWatcher {
                     }
 
                     // 触发自动存档
-                    if let Some(cb) =
-                        callback_clone.lock().unwrap().as_ref()
-                    {
+                    if let Some(cb) = callback_clone.lock().unwrap().as_ref() {
                         cb(path);
                     }
                 }
@@ -400,8 +392,7 @@ impl FileWatcher {
         let mut watched = self.watched_paths.lock().unwrap();
         if let Some(pos) = watched.iter().position(|p| p == path) {
             if let Some(ref mut watcher) = self.watcher {
-                let _ =
-                    watcher.unwatch(std::path::Path::new(path));
+                let _ = watcher.unwatch(std::path::Path::new(path));
             }
             watched.remove(pos);
         }

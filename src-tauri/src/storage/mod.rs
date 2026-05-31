@@ -85,8 +85,7 @@ pub fn cleanup_orphan_chunks(
 
         for chunk_entry in std::fs::read_dir(&dir_path)? {
             let chunk_entry = chunk_entry?;
-            let name =
-                chunk_entry.file_name().to_string_lossy().to_string();
+            let name = chunk_entry.file_name().to_string_lossy().to_string();
 
             if !chunk_entry.file_type()?.is_file() {
                 continue;

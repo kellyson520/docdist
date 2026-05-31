@@ -143,9 +143,7 @@ pub async fn start_watcher(
 }
 
 #[tauri::command]
-pub async fn stop_watcher(
-    state: State<'_, AppState>,
-) -> Result<(), AppError> {
+pub async fn stop_watcher(state: State<'_, AppState>) -> Result<(), AppError> {
     let mut watcher = state.watcher.lock().unwrap();
     watcher.stop();
     Ok(())
