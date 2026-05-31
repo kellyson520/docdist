@@ -45,7 +45,8 @@ export function WatcherPanel() {
     if (watcherStatus.running) {
       await stopWatcher();
     } else {
-      await startWatcher(watcherStatus.paths.length > 0 ? watcherStatus.paths : []);
+      const paths = watcherStatus.paths ?? [];
+      await startWatcher(paths.length > 0 ? paths : []);
     }
   };
 
@@ -169,7 +170,7 @@ export function WatcherPanel() {
                     )}
                     <div className="min-w-0">
                       <p className="text-xs text-gray-600 dark:text-gray-300 truncate" title={evt.path}>
-                        {evt.path.split('/').pop() || evt.path}
+                        {(evt.path ?? '').split('/').pop() || evt.path}
                       </p>
                       <p className="text-[10px] text-gray-400 dark:text-gray-500">{evt.timestamp}</p>
                     </div>

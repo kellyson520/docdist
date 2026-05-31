@@ -15,10 +15,18 @@ export function ConfirmDialog({ open, title, message, onConfirm, onCancel }: Con
   onCancelRef.current = onCancel;
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
-    if (e.key === 'Escape') {
+    if (e.key === 'Escape' && open) {
       onCancelRef.current();
     }
-  }, []);
+  }, [open]);
+
+  // Focus the confirm button on open for keyboard users
+  const confirmBtnRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (open) {
+      confirmBtnRef.current?.focus();
+    }
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -31,6 +39,9 @@ export function ConfirmDialog({ open, title, message, onConfirm, onCancel }: Con
 
   return (
     <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="confirm-dialog-title"
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/30"
       onClick={(e) => {
         if (e.target === e.currentTarget) {
@@ -39,7 +50,7 @@ export function ConfirmDialog({ open, title, message, onConfirm, onCancel }: Con
       }}
     >
       <div ref={dialogRef} className="bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6 w-96 animate-fade-in">
-        <h3 className="text-lg font-semibold mb-2 dark:text-white">{title}</h3>
+        <h3 id="confirm-dialog-title" className="text-lg font-semibold mb-2 dark:text-white">{title}</h3>
         <p className="text-gray-600 dark:text-gray-300 text-sm mb-6">{message}</p>
         <div className="flex justify-end gap-3">
           <button
@@ -50,6 +61,7 @@ export function ConfirmDialog({ open, title, message, onConfirm, onCancel }: Con
           </button>
           <button
             onClick={onConfirm}
+            ref={confirmBtnRef}
             className="px-4 py-2 text-sm bg-red-500 text-white rounded-lg hover:bg-red-600 transition"
           >
             确认

@@ -13,7 +13,9 @@ export function useTheme() {
     return 'system';
   });
 
-  const [resolvedTheme, setResolvedTheme] = useState<'light' | 'dark'>('light');
+  const [resolvedTheme, setResolvedTheme] = useState<'light' | 'dark'>(() =>
+    window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+  );
 
   // 初始化时同步 localStorage 与后端 config.theme
   useEffect(() => {

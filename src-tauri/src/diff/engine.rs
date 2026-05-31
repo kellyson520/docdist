@@ -61,7 +61,21 @@ impl BinaryDiffEngine {
         let max_size = old.len().max(new.len()) as f64;
         let min_size = old.len().min(new.len()) as f64;
 
-        min_size / max_size
+        // Size ratio gives an upper bound; also check actual byte matches
+        // in the overlapping region for content-aware similarity.
+        let overlap = min_size as usize;
+        if overlap == 0 {
+            return 0.0;
+        }
+
+        let matching = old[..overlap]
+            .iter()
+            .zip(new[..overlap].iter())
+            .filter(|(a, b)| a == b)
+            .count() as f64;
+
+        // Blend: matching bytes in overlap + size penalty for size difference
+        matching / max_size
     }
 }
 
@@ -165,6 +179,7 @@ mod tests {
         let old = b"hi";
         let new = b"hello";
         let similarity = BinaryDiffEngine::calculate_similarity(old, new);
-        assert_eq!(similarity, 0.4); // 2/5
+        // Content-aware: 'h' matches, 'i'≠'e' → 1/5 = 0.2
+        assert_eq!(similarity, 0.2);
     }
 }

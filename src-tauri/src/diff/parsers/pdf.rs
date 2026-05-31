@@ -32,6 +32,7 @@ impl FileParser for PdfParser {
 
 impl PdfParser {
     /// 从文件路径解析 PDF
+    #[allow(dead_code)]
     pub fn parse_pdf_file(&self, path: &str) -> Result<String, AppError> {
         let output = Command::new("pdftotext")
             .args([path, "-"])
@@ -57,7 +58,10 @@ mod tests {
         let result = parser.detect_type("document.pdf", b"").unwrap();
 
         match result {
-            FileType::Pdf { page_count, has_images } => {
+            FileType::Pdf {
+                page_count,
+                has_images,
+            } => {
                 assert_eq!(page_count, 0);
                 assert_eq!(has_images, false);
             }

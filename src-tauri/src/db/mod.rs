@@ -166,8 +166,15 @@ pub fn get_archives(
     }
     if let Some(s) = search {
         if !s.is_empty() {
-            sql.push_str(" AND (file_name LIKE ? OR note LIKE ?)");
-            let pattern = format!("%{}%", s);
+            sql.push_str(
+                " AND (file_name LIKE ? ESCAPE '\\' OR note LIKE ? ESCAPE '\\')",
+            );
+            // 转义 LIKE 通配符，防止用户输入的 % 和 _ 被当作通配符
+            let escaped = s
+                .replace('\\', "\\\\")
+                .replace('%', "\\%")
+                .replace('_', "\\_");
+            let pattern = format!("%{}%", escaped);
             param_values.push(Box::new(pattern.clone()));
             param_values.push(Box::new(pattern));
         }
@@ -337,6 +344,10 @@ pub fn get_archives_paginated(
     page: u32,
     page_size: u32,
 ) -> Result<(Vec<Archive>, i64), crate::error::AppError> {
+    // 防御性校验：page 和 page_size 必须 >= 1，否则返回空结果
+    if page < 1 || page_size < 1 {
+        return Ok((Vec::new(), 0));
+    }
     let conn = pool.get()?;
     let mut sql = format!("SELECT {} FROM archives WHERE 1=1", SELECT_FIELDS);
     let mut count_sql = "SELECT COUNT(*) FROM archives WHERE 1=1".to_string();
@@ -355,12 +366,17 @@ pub fn get_archives_paginated(
     if let Some(s) = search {
         if !s.is_empty() {
             sql.push_str(
-                " AND (file_name LIKE ? OR note LIKE ? OR tags LIKE ?)",
+                " AND (file_name LIKE ? ESCAPE '\\' OR note LIKE ? ESCAPE '\\' OR tags LIKE ? ESCAPE '\\')",
             );
             count_sql.push_str(
-                " AND (file_name LIKE ? OR note LIKE ? OR tags LIKE ?)",
+                " AND (file_name LIKE ? ESCAPE '\\' OR note LIKE ? ESCAPE '\\' OR tags LIKE ? ESCAPE '\\')",
             );
-            let pattern = format!("%{}%", s);
+            // 转义 LIKE 通配符，防止用户输入的 % 和 _ 被当作通配符
+            let escaped = s
+                .replace('\\', "\\\\")
+                .replace('%', "\\%")
+                .replace('_', "\\_");
+            let pattern = format!("%{}%", escaped);
             param_values.push(Box::new(pattern.clone()));
             param_values.push(Box::new(pattern.clone()));
             param_values.push(Box::new(pattern.clone()));

@@ -136,6 +136,9 @@ export interface ArchiveState {
   setupEventListeners: () => () => void;
 }
 
+// ==================== 竞态请求ID ====================
+let _fetchRequestId = 0;
+
 // ==================== Store ====================
 
 export const useArchiveStore = create<ArchiveState>((set, get) => ({
@@ -163,19 +166,23 @@ export const useArchiveStore = create<ArchiveState>((set, get) => ({
   // ==================== 存档 CRUD ====================
 
   fetchArchives: async (filePath?: string, search?: string) => {
+    const requestId = ++_fetchRequestId;
     set({ loading: true, error: null, page: 1, hasMore: false, totalCount: 0 });
     try {
       const archives = await invoke<Archive[]>('list_archives', {
         filePath: filePath || null,
         search: search || null,
       });
+      if (requestId !== _fetchRequestId) return; // 过期响应，丢弃
       set({ archives, loading: false });
     } catch (e: unknown) {
-      set({ error: e instanceof Error ? e.message : String(e), loading: false });
+      if (requestId !== _fetchRequestId) return;
+      set({ archives: [], error: e instanceof Error ? e.message : String(e), loading: false });
     }
   },
 
   fetchArchivesPaginated: async (page = 1, filePath?: string, search?: string) => {
+    const requestId = ++_fetchRequestId;
     const { pageSize } = get();
     set({ loading: true, error: null });
     try {
@@ -185,6 +192,7 @@ export const useArchiveStore = create<ArchiveState>((set, get) => ({
         page,
         pageSize,
       });
+      if (requestId !== _fetchRequestId) return;
       set({
         archives,
         page,
@@ -193,7 +201,8 @@ export const useArchiveStore = create<ArchiveState>((set, get) => ({
         loading: false,
       });
     } catch (e: unknown) {
-      set({ error: e instanceof Error ? e.message : String(e), loading: false });
+      if (requestId !== _fetchRequestId) return;
+      set({ archives: [], error: e instanceof Error ? e.message : String(e), loading: false });
     }
   },
 
@@ -242,10 +251,14 @@ export const useArchiveStore = create<ArchiveState>((set, get) => ({
       await invoke('delete_archive', { id });
       log.info('存档已删除', { id });
       toast.success('已删除', '存档已成功删除');
-      const { fetchArchives, searchQuery, selectedIds } = get();
+      const { fetchArchives, searchQuery, selectedIds, selectedArchive, compareTarget } = get();
       const newSelected = new Set(selectedIds);
       newSelected.delete(id);
-      set({ selectedIds: newSelected });
+      set({
+        selectedIds: newSelected,
+        selectedArchive: selectedArchive?.id === id ? null : selectedArchive,
+        compareTarget: compareTarget?.id === id ? null : compareTarget,
+      });
       await fetchArchives(undefined, searchQuery || undefined);
       await get().fetchStatistics();
     } catch (e: unknown) {
@@ -257,8 +270,13 @@ export const useArchiveStore = create<ArchiveState>((set, get) => ({
     set({ loading: true, error: null });
     try {
       const count = await invoke<number>('delete_archives_batch', { ids });
-      const { fetchArchives, searchQuery } = get();
-      set({ selectedIds: new Set() });
+      const { fetchArchives, searchQuery, selectedArchive, compareTarget } = get();
+      const idsSet = new Set(ids);
+      set({
+        selectedIds: new Set(),
+        selectedArchive: selectedArchive && idsSet.has(selectedArchive.id) ? null : selectedArchive,
+        compareTarget: compareTarget && idsSet.has(compareTarget.id) ? null : compareTarget,
+      });
       await fetchArchives(undefined, searchQuery || undefined);
       await get().fetchStatistics();
       return count;
@@ -287,7 +305,10 @@ export const useArchiveStore = create<ArchiveState>((set, get) => ({
       set({ diffResult, loading: false });
       toast.info('对比完成', `+${diffResult.stats.additions} -${diffResult.stats.deletions}`);
     } catch (e: unknown) {
-      set({ error: e instanceof Error ? e.message : String(e), loading: false });
+      const msg = e instanceof Error ? e.message : String(e);
+      log.error('对比失败', msg);
+      toast.error('对比失败', msg);
+      set({ error: msg, loading: false });
     }
   },
 
@@ -298,7 +319,10 @@ export const useArchiveStore = create<ArchiveState>((set, get) => ({
       set({ enhancedDiffResult: result, loading: false });
       toast.info('对比完成', '增强差异分析已生成');
     } catch (err) {
-      set({ error: String(err), loading: false });
+      const msg = err instanceof Error ? err.message : String(err);
+      log.error('增强对比失败', msg);
+      toast.error('对比失败', msg);
+      set({ error: msg, loading: false });
     }
   },
 

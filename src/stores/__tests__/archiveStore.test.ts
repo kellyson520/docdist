@@ -653,7 +653,7 @@ describe('useArchiveStore', () => {
       await useArchiveStore.getState().compareArchivesEnhanced('id1', 'id2')
 
       const { error, loading } = useArchiveStore.getState()
-      expect(error).toBe('Error: Compare failed')
+      expect(error).toBe('Compare failed')
       expect(loading).toBe(false)
     })
 

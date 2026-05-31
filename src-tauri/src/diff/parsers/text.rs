@@ -8,8 +8,10 @@ pub struct TextParser;
 
 impl FileParser for TextParser {
     fn extract_text(&self, data: &[u8]) -> Result<String, AppError> {
-        String::from_utf8(data.to_vec())
-            .map_err(|e| AppError::Other(format!("文本解码失败: {}", e)))
+        // Use lossy conversion so non-UTF-8 bytes are replaced with
+        // the Unicode replacement character instead of causing a hard error.
+        // This handles GBK, Latin-1, BOM-prefixed, and other encodings.
+        Ok(String::from_utf8_lossy(data).into_owned())
     }
 
     fn detect_type(&self, path: &str, _data: &[u8]) -> Option<FileType> {

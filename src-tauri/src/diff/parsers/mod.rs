@@ -1,3 +1,6 @@
+pub mod cad;
+pub mod image;
+pub mod pdf;
 pub mod text;
 
 use crate::diff::types::FileType;
@@ -81,13 +84,15 @@ impl ParserRegistry {
         path: &str,
         data: &[u8],
     ) -> Result<String, AppError> {
+        // Find the correct parser by matching file type detection,
+        // then delegate text extraction to that parser.
         for parser in &self.parsers {
-            if parser.supports_binary() || self.is_text_file(path) {
+            if parser.detect_type(path, data).is_some() {
                 return parser.extract_text(data);
             }
         }
 
-        // 二进制文件返回空文本
+        // No parser matched — return empty for unrecognized/binary files
         Ok(String::new())
     }
 

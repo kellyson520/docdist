@@ -111,20 +111,47 @@ pub fn restore_file(
         std::fs::create_dir_all(parent)?;
     }
 
-    let mut out_file = std::fs::File::create(output_path)?;
+    // Write to a temp file first, then atomically rename.
+    // This prevents data loss if restore fails midway (e.g. missing chunk,
+    // disk full) — the original file at output_path is not destroyed.
+    let temp_path = output_path.with_extension({
+        let mut ext = output_path
+            .extension()
+            .map(|e| e.to_os_string())
+            .unwrap_or_default();
+        ext.push(".tmprestore");
+        ext
+    });
 
-    for hash in chunk_hashes {
-        let prefix = hash_prefix(hash)?;
-        let chunk_path = base_dir.join(prefix).join(hash);
-        if !chunk_path.exists() {
-            return Err(crate::error::AppError::Other(format!(
-                "分块不存在: {}",
-                hash
-            )));
+    // Use a helper closure so we can clean up the temp file on any error
+    let result: Result<(), crate::error::AppError> = (|| {
+        let out_file = std::fs::File::create(&temp_path)?;
+        let mut out_file = std::io::BufWriter::new(out_file);
+
+        for hash in chunk_hashes {
+            let prefix = hash_prefix(hash)?;
+            let chunk_path = base_dir.join(prefix).join(hash);
+            if !chunk_path.exists() {
+                return Err(crate::error::AppError::Other(format!(
+                    "分块不存在: {}",
+                    hash
+                )));
+            }
+            let chunk_data = std::fs::read(&chunk_path)?;
+            out_file.write_all(&chunk_data)?;
         }
-        let chunk_data = std::fs::read(&chunk_path)?;
-        out_file.write_all(&chunk_data)?;
+
+        out_file.flush()?;
+        Ok(())
+    })();
+
+    if result.is_err() {
+        let _ = std::fs::remove_file(&temp_path);
+        return result;
     }
+
+    // Atomic rename: either the full file exists or the old one is preserved
+    std::fs::rename(&temp_path, output_path)?;
 
     Ok(())
 }

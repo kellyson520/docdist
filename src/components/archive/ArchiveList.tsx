@@ -42,6 +42,7 @@ export function ArchiveList() {
 
   const [showCreate, setShowCreate] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const [batchDeleteConfirm, setBatchDeleteConfirm] = useState(false);
   const [createPath, setCreatePath] = useState('');
 
   useEffect(() => {
@@ -66,6 +67,7 @@ export function ArchiveList() {
     const ids = Array.from(selectedIds);
     if (ids.length > 0) {
       await deleteArchivesBatch(ids);
+      setBatchDeleteConfirm(false);
     }
   }, [selectedIds, deleteArchivesBatch]);
 
@@ -113,7 +115,7 @@ export function ArchiveList() {
           </button>
           <div className="flex-1" />
           <button
-            onClick={handleBatchDelete}
+            onClick={() => setBatchDeleteConfirm(true)}
             className="flex items-center gap-1 px-2 py-1 text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/30 transition"
           >
             <Trash2 className="w-3.5 h-3.5" />
@@ -153,11 +155,11 @@ export function ArchiveList() {
               onSelect={() => selectArchive(archive)}
               onRestore={() => restoreArchive(archive.id)}
               onDelete={() => setDeleteTarget(archive.id)}
-              onCompare={() => {
+              onCompare={async () => {
                 if (selectedArchive && selectedArchive.id !== archive.id) {
                   if (selectedArchive.file_path === archive.file_path) {
-                    compareArchivesEnhanced(selectedArchive.id, archive.id);
                     setView('enhanced-diff');
+                    await compareArchivesEnhanced(selectedArchive.id, archive.id);
                   } else {
                     toast.warning('只能对比同一文件的不同版本');
                   }
@@ -214,6 +216,15 @@ export function ArchiveList() {
           setDeleteTarget(null);
         }}
         onCancel={() => setDeleteTarget(null)}
+      />
+
+      {/* Batch Delete Confirmation */}
+      <ConfirmDialog
+        open={batchDeleteConfirm}
+        title="批量删除"
+        message={`确定要删除选中的 ${selectedIds.size} 个存档吗？此操作不可撤销。`}
+        onConfirm={handleBatchDelete}
+        onCancel={() => setBatchDeleteConfirm(false)}
       />
     </div>
   );

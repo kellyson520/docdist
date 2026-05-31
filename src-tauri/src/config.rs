@@ -148,8 +148,11 @@ impl AppConfig {
 
     pub fn save(&self, data_dir: &Path) -> Result<(), crate::error::AppError> {
         let config_path = data_dir.join("config.json");
+        let tmp_path = data_dir.join("config.json.tmp");
         let content = serde_json::to_string_pretty(self)?;
-        std::fs::write(config_path, content)?;
+        // 原子写入：先写临时文件，再 rename，防止崩溃导致配置损坏
+        std::fs::write(&tmp_path, &content)?;
+        std::fs::rename(&tmp_path, &config_path)?;
         Ok(())
     }
 }

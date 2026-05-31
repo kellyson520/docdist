@@ -1,12 +1,20 @@
 import { useArchiveStore } from '../../stores/archiveStore';
 import { X, GitCompare, Copy, Check, ChevronDown, ChevronUp } from 'lucide-react';
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 
 export function DiffViewer() {
   const { diffResult, clearDiff, loading } = useArchiveStore();
   const [copied, setCopied] = useState(false);
-  const [expandedHunks, setExpandedHunks] = useState<Set<number>>(new Set());
+  const [collapsedHunks, setCollapsedHunks] = useState<Set<number>>(new Set());
   const [showStats, setShowStats] = useState(true);
+
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+    };
+  }, []);
 
   const handleCopy = useCallback(async () => {
     if (!diffResult) return;
@@ -21,14 +29,14 @@ export function DiffViewer() {
     try {
       await navigator.clipboard.writeText(text);
       setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      copyTimerRef.current = setTimeout(() => setCopied(false), 2000);
     } catch (err) {
       console.error('Failed to copy:', err);
     }
   }, [diffResult]);
 
   const toggleHunk = useCallback((index: number) => {
-    setExpandedHunks(prev => {
+    setCollapsedHunks(prev => {
       const next = new Set(prev);
       if (next.has(index)) {
         next.delete(index);
@@ -40,13 +48,13 @@ export function DiffViewer() {
   }, []);
 
   const expandAll = useCallback(() => {
-    if (!diffResult) return;
-    setExpandedHunks(new Set(diffResult.hunks.map((_, i) => i)));
-  }, [diffResult]);
+    setCollapsedHunks(new Set());
+  }, []);
 
   const collapseAll = useCallback(() => {
-    setExpandedHunks(new Set());
-  }, []);
+    if (!diffResult) return;
+    setCollapsedHunks(new Set(diffResult.hunks.map((_, i) => i)));
+  }, [diffResult]);
 
   if (loading) {
     return (
@@ -170,7 +178,7 @@ export function DiffViewer() {
       {/* Diff Content */}
       <div className="flex-1 overflow-y-auto font-mono text-xs">
         {diffResult.hunks.map((hunk, hunkIdx) => {
-          const isExpanded = expandedHunks.has(hunkIdx) || expandedHunks.size === 0;
+          const isExpanded = !collapsedHunks.has(hunkIdx);
           
           return (
             <div key={hunkIdx} className="border-b border-gray-100 dark:border-gray-700">

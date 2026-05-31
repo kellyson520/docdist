@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { FileText, Copy, Check, FileSearch } from 'lucide-react';
 import { useArchiveStore } from '../../stores/archiveStore';
 import { DiffDetailView } from './DiffDetailView';
@@ -11,6 +11,14 @@ export function EnhancedDiffViewer() {
   const [activeTab, setActiveTab] = useState<'diff' | 'summary' | 'regions'>('diff');
   const [copied, setCopied] = useState(false);
 
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+    };
+  }, []);
+
   const handleCopy = async () => {
     if (!enhancedDiffResult) return;
 
@@ -21,7 +29,7 @@ export function EnhancedDiffViewer() {
     try {
       await navigator.clipboard.writeText(text);
       setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      copyTimerRef.current = setTimeout(() => setCopied(false), 2000);
     } catch (err) {
       console.error('复制失败:', err);
     }
@@ -76,9 +84,12 @@ export function EnhancedDiffViewer() {
       </div>
 
       {/* Tab Navigation */}
-      <div className="flex border-b border-gray-200 dark:border-gray-700">
+      <div role="tablist" className="flex border-b border-gray-200 dark:border-gray-700">
         <button
           onClick={() => setActiveTab('diff')}
+          role="tab"
+          aria-selected={activeTab === 'diff'}
+          id="tab-diff"
           className={`px-4 py-2 text-sm font-medium ${
             activeTab === 'diff'
               ? 'border-b-2 border-primary-500 text-primary-600 dark:text-primary-400'
@@ -89,6 +100,9 @@ export function EnhancedDiffViewer() {
         </button>
         <button
           onClick={() => setActiveTab('summary')}
+          role="tab"
+          aria-selected={activeTab === 'summary'}
+          id="tab-summary"
           className={`px-4 py-2 text-sm font-medium ${
             activeTab === 'summary'
               ? 'border-b-2 border-primary-500 text-primary-600 dark:text-primary-400'
@@ -99,6 +113,9 @@ export function EnhancedDiffViewer() {
         </button>
         <button
           onClick={() => setActiveTab('regions')}
+          role="tab"
+          aria-selected={activeTab === 'regions'}
+          id="tab-regions"
           className={`px-4 py-2 text-sm font-medium ${
             activeTab === 'regions'
               ? 'border-b-2 border-primary-500 text-primary-600 dark:text-primary-400'
@@ -132,6 +149,7 @@ function FileTypeBadge({ fileType }: { fileType: FileType }) {
     if (fileType?.type === 'Pdf') return `PDF (${fileType.page_count}页)`;
     if (fileType?.type === 'Cad') return `CAD (${fileType.format})`;
     if (fileType?.type === 'Image') return `${fileType.width}x${fileType.height}`;
+    if (fileType?.type === 'Office') return `Office (${fileType.format})`;
     return '二进制';
   };
 

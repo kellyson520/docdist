@@ -164,9 +164,9 @@ function ArchiveCardInner({
         )}
 
         {/* Tags */}
-        {archive.tags.length > 0 && (
+        {archive.tags?.length > 0 && (
           <div className="flex flex-wrap gap-1 mt-2 ml-13">
-            {archive.tags.map((tag) => (
+            {archive.tags?.map((tag) => (
               <TagBadge key={tag} tag={tag} />
             ))}
           </div>

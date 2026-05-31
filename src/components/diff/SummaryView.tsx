@@ -10,20 +10,26 @@ export function SummaryView({ summary }: SummaryViewProps) {
   return (
     <div className="space-y-4">
       {/* 变更分布 */}
-      <div className="grid grid-cols-5 gap-4">
-        <StatCard label="新增" value={summary.change_distribution.additions} color="green" />
-        <StatCard label="删除" value={summary.change_distribution.deletions} color="red" />
-        <StatCard label="修改" value={summary.change_distribution.modifications} color="yellow" />
-        <StatCard label="移动" value={summary.change_distribution.moves} color="blue" />
-        <StatCard label="重命名" value={summary.change_distribution.renames} color="purple" />
-      </div>
+      {summary.change_distribution && (
+        <div className="grid grid-cols-5 gap-4">
+          <StatCard label="新增" value={summary.change_distribution.additions} color="green" />
+          <StatCard label="删除" value={summary.change_distribution.deletions} color="red" />
+          <StatCard label="修改" value={summary.change_distribution.modifications} color="yellow" />
+          <StatCard label="移动" value={summary.change_distribution.moves} color="blue" />
+          <StatCard label="重命名" value={summary.change_distribution.renames} color="purple" />
+        </div>
+      )}
 
       {/* 变更列表 */}
       <div className="space-y-2">
         <h4 className="font-semibold text-gray-700 dark:text-gray-300">变更详情</h4>
-        {summary.changes.map((change) => (
-          <ChangeItem key={change.id} change={change} />
-        ))}
+        {summary.changes?.length > 0 ? (
+          summary.changes.map((change) => (
+            <ChangeItem key={change.id} change={change} />
+          ))
+        ) : (
+          <p className="text-sm text-gray-400 dark:text-gray-500 py-4 text-center">暂无变更记录</p>
+        )}
       </div>
     </div>
   );

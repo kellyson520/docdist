@@ -34,7 +34,7 @@ export const useToastStore = create<ToastState>((set) => ({
   addToast: (toast) => {
     const id = `toast-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     const newToast: Toast = { id, ...toast };
-    if (!newToast.duration) newToast.duration = 3000;
+    if (newToast.duration == null) newToast.duration = 3000;
     if (newToast.dismissible === undefined) newToast.dismissible = true;
 
     log.debug(`Toast: [${toast.type}] ${toast.title}`);
@@ -55,6 +55,12 @@ export const useToastStore = create<ToastState>((set) => ({
   },
 
   removeToast: (id) => {
+    // 清理自动消失定时器，避免泄漏
+    const timerId = pendingTimers.get(id);
+    if (timerId !== undefined) {
+      clearTimeout(timerId);
+      pendingTimers.delete(id);
+    }
     set((state) => ({
       toasts: state.toasts.filter(t => t.id !== id),
     }));

@@ -144,8 +144,25 @@ fn validate_target_path(path: &Path) -> Result<(), AppError> {
         }
     }
 
-    // 2. 检查不在系统敏感目录
-    let path_str = path.to_string_lossy().to_string();
+    // 2. 规范化路径（解析符号链接），防止通过符号链接绕过目录检查
+    let canonical = if path.exists() {
+        path.canonicalize()
+            .map_err(|_| AppError::Other("无法解析目标路径".to_string()))?
+    } else {
+        // 目标文件尚不存在时，尝试规范化其父目录
+        let parent = path.parent().unwrap_or(path);
+        let file_name = path.file_name();
+        match (parent.canonicalize(), file_name) {
+            (Ok(mut canon), Some(name)) => {
+                canon.push(name);
+                canon
+            }
+            _ => path.to_path_buf(),
+        }
+    };
+
+    // 3. 检查不在系统敏感目录（基于规范化后的路径）
+    let path_str = canonical.to_string_lossy().to_string();
     let forbidden = ["/etc", "/sys", "/proc", "/dev", "/root", "/boot"];
     for prefix in &forbidden {
         if path_str == *prefix || path_str.starts_with(&format!("{}/", prefix))
@@ -169,7 +186,13 @@ pub struct ArchiveService {
 impl ArchiveService {
     pub fn new(pool: DbPool, data_dir: &Path, chunk_size: usize) -> Self {
         let chunks_dir = data_dir.join("chunks");
-        std::fs::create_dir_all(&chunks_dir).ok();
+        if let Err(e) = std::fs::create_dir_all(&chunks_dir) {
+            tracing::error!(
+                "Failed to create chunks directory {:?}: {}",
+                chunks_dir,
+                e
+            );
+        }
         Self {
             pool,
             chunks_dir,
@@ -193,12 +216,6 @@ impl ArchiveService {
         // 分块存储文件（使用配置的 chunk_size）
         let (chunk_hashes, chunk_sizes, file_size, checksum) =
             storage::store_file(&self.chunks_dir, path, self.chunk_size)?;
-
-        // 记录已写入的 chunk 路径，事务失败时清理孤儿文件
-        let chunk_paths: Vec<std::path::PathBuf> = chunk_hashes
-            .iter()
-            .map(|hash| self.chunks_dir.join(&hash[..2]).join(hash))
-            .collect();
 
         let file_name = path
             .file_name()
@@ -283,12 +300,29 @@ impl ArchiveService {
 
         tx.commit().map_err(|e| {
             tracing::warn!(
-                "DB transaction failed, cleaning up {} chunk files",
-                chunk_paths.len()
+                "DB transaction failed, cleaning up {} candidate chunk files",
+                chunk_hashes.len()
             );
-            for p in &chunk_paths {
-                if p.exists() {
-                    let _ = std::fs::remove_file(p);
+            // Only delete chunks that are NOT referenced by other archives.
+            // Transaction was rolled back, so DB reflects pre-transaction state.
+            // - Hash NOT in chunks table → newly created chunk, safe to delete.
+            // - Hash in chunks table with ref_count > 0 → owned by another archive, MUST keep.
+            if let Ok(cleanup_conn) = self.pool.get() {
+                for hash in &chunk_hashes {
+                    let chunk_path = self.chunks_dir.join(&hash[..2]).join(hash);
+                    if !chunk_path.exists() {
+                        continue;
+                    }
+                    let still_referenced: bool = cleanup_conn
+                        .query_row(
+                            "SELECT COALESCE(ref_count, 0) > 0 FROM chunks WHERE hash = ?1",
+                            rusqlite::params![hash],
+                            |r| r.get(0),
+                        )
+                        .unwrap_or(false);
+                    if !still_referenced {
+                        let _ = std::fs::remove_file(&chunk_path);
+                    }
                 }
             }
             crate::error::AppError::from(e)
@@ -436,17 +470,18 @@ impl ArchiveService {
         let total_deleted =
             tx.execute(&sql, rusqlite::params_from_iter(id_params.iter()))?;
 
-        // Step 4: 批量减少 chunk ref_count（去重后逐 hash 更新）
-        let mut unique_hashes: std::collections::HashSet<String> =
-            std::collections::HashSet::new();
+        // Step 4: 按 hash 统计出现次数，批量减少 chunk ref_count
+        // 同一 chunk 可能被多个被删除的存档引用，需要逐引用递减
+        let mut hash_counts: std::collections::HashMap<String, i64> =
+            std::collections::HashMap::new();
         for hash in &all_chunk_hashes {
-            unique_hashes.insert(hash.clone());
+            *hash_counts.entry(hash.clone()).or_insert(0) += 1;
         }
-        for hash in &unique_hashes {
+        for (hash, count) in &hash_counts {
             tx.execute(
-                "UPDATE chunks SET ref_count = MAX(0, ref_count - 1) \
+                "UPDATE chunks SET ref_count = MAX(0, ref_count - ?2) \
                  WHERE hash = ?1",
-                rusqlite::params![hash],
+                rusqlite::params![hash, count],
             )?;
         }
 
@@ -624,6 +659,12 @@ impl ArchiveService {
             if chunk_path.exists() {
                 let data = std::fs::read(&chunk_path)?;
                 content.extend_from_slice(&data);
+            } else {
+                return Err(AppError::Other(format!(
+                    "分块文件缺失: {} (hash: {})",
+                    chunk_path.display(),
+                    hash
+                )));
             }
         }
         Ok(content)

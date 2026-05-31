@@ -7,8 +7,16 @@ pub struct CadParser;
 
 impl FileParser for CadParser {
     fn extract_text(&self, data: &[u8]) -> Result<String, AppError> {
-        String::from_utf8(data.to_vec())
-            .map_err(|e| AppError::Other(format!("DXF 解码失败: {}", e)))
+        // DXF files are text-based, but DWG is binary.
+        // Try UTF-8 first; fall back to lossy conversion for DXF
+        // or return error hint for DWG.
+        match std::str::from_utf8(data) {
+            Ok(s) => Ok(s.to_string()),
+            Err(_) => {
+                // DWG binary data is not extractable as text
+                Ok(String::from_utf8_lossy(data).into_owned())
+            }
+        }
     }
 
     fn detect_type(&self, path: &str, _data: &[u8]) -> Option<FileType> {
@@ -34,6 +42,7 @@ impl FileParser for CadParser {
 }
 
 /// CAD 结构信息
+#[allow(dead_code)]
 pub struct CadStructure {
     pub layers: Vec<String>,
     pub entity_count: usize,
@@ -41,6 +50,7 @@ pub struct CadStructure {
 
 impl CadParser {
     /// 解析 DXF 结构
+    #[allow(dead_code)]
     pub fn parse_dxf_structure(
         &self,
         content: &str,

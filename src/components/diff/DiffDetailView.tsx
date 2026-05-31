@@ -11,6 +11,14 @@ const normalizeLineEndings = (text: string) =>
   text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
 
 export function DiffDetailView({ result }: DiffDetailViewProps) {
+  if (!result.diff_result?.hunks?.length) {
+    return (
+      <div className="text-center py-8 text-gray-400 dark:text-gray-500">
+        <p className="text-sm">暂无差异数据</p>
+      </div>
+    );
+  }
+
   const stats = result.diff_result.stats;
 
   return (
@@ -77,7 +85,7 @@ export function DiffDetailView({ result }: DiffDetailViewProps) {
                   <span className="w-5 text-center font-bold">
                     {change.change_type === 'add' ? '+' : change.change_type === 'delete' ? '-' : ' '}
                   </span>
-                  <span className="whitespace-pre">{normalizeLineEndings(change.content)}</span>
+                  <span className="whitespace-pre overflow-x-auto flex-1">{normalizeLineEndings(change.content)}</span>
                 </div>
               ))}
             </div>

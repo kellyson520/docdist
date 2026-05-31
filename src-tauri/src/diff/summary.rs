@@ -23,7 +23,26 @@ impl SummaryGenerator {
         let affected_regions = self.detect_affected_regions(&changes);
         let ai_summary = self.generate_ai_summary(&changes);
 
-        let modifications = 0usize;
+        // Each modification is represented as a delete+add pair in the diff.
+        // Count them by pairing consecutive delete/add changes.
+        let modifications = {
+            let all_changes: Vec<&str> = diff_result
+                .hunks
+                .iter()
+                .flat_map(|h| h.changes.iter().map(|c| c.change_type.as_str()))
+                .collect();
+            let mut mods = 0usize;
+            let mut i = 0;
+            while i + 1 < all_changes.len() {
+                if all_changes[i] == "delete" && all_changes[i + 1] == "add" {
+                    mods += 1;
+                    i += 2;
+                } else {
+                    i += 1;
+                }
+            }
+            mods
+        };
         let additions = diff_result.stats.additions as usize;
         let deletions = diff_result.stats.deletions as usize;
         let unchanged = diff_result.stats.unchanged as usize;

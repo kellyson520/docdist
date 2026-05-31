@@ -65,17 +65,24 @@ impl FileWatcher {
 
     /// 设置 Tauri AppHandle 用于发送事件
     pub fn set_app_handle(&self, handle: tauri::AppHandle) {
-        *self.event_sender.lock().unwrap() = Some(handle);
+        *self.event_sender.lock().unwrap_or_else(|e| e.into_inner()) =
+            Some(handle);
     }
 
     /// 设置自动存档回调
     pub fn set_auto_archive_callback(&self, cb: AutoArchiveCallback) {
-        *self.auto_archive_cb.lock().unwrap() = Some(cb);
+        *self
+            .auto_archive_cb
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = Some(cb);
     }
 
     /// 设置排除模式
     pub fn set_exclude_patterns(&self, patterns: Vec<String>) {
-        *self.exclude_patterns.lock().unwrap() = patterns;
+        *self
+            .exclude_patterns
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = patterns;
     }
 
     /// 设置防抖持续时间
@@ -87,7 +94,12 @@ impl FileWatcher {
     /// 设置自动存档回调
     #[allow(dead_code)]
     fn emit_event(&self, event: FileChangeEvent) {
-        if let Some(handle) = self.event_sender.lock().unwrap().as_ref() {
+        if let Some(handle) = self
+            .event_sender
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+        {
             let _ = handle.emit_all("file-changed", &event);
         }
     }
@@ -97,7 +109,10 @@ impl FileWatcher {
     fn trigger_auto_archive(&self, path: String) {
         // 去重：同一文件在防抖窗口内只触发一次
         {
-            let mut triggered = self.triggered_paths.lock().unwrap();
+            let mut triggered = self
+                .triggered_paths
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
             if triggered.contains_key(&path) {
                 return;
             }
@@ -115,14 +130,22 @@ impl FileWatcher {
         self.emit_event(event);
 
         // 调用自动存档回调
-        if let Some(cb) = self.auto_archive_cb.lock().unwrap().as_ref() {
+        if let Some(cb) = self
+            .auto_archive_cb
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+        {
             cb(path);
         }
     }
 
     /// 清除已触发标记（存档完成后调用）
     pub fn clear_triggered(&self, path: &str) {
-        self.triggered_paths.lock().unwrap().remove(path);
+        self.triggered_paths
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(path);
     }
 
     pub fn start(
@@ -159,7 +182,9 @@ impl FileWatcher {
                                     path.to_string_lossy().to_string();
 
                                 // 排除检查 — 按路径段匹配
-                                let patterns = exclude.lock().unwrap();
+                                let patterns = exclude
+                                    .lock()
+                                    .unwrap_or_else(|e| e.into_inner());
                                 let should_skip =
                                     is_path_excluded(&path_str, &patterns);
                                 drop(patterns);
@@ -175,7 +200,9 @@ impl FileWatcher {
 
                                 // 防抖：记录变更时间
                                 {
-                                    let mut p = pending.lock().unwrap();
+                                    let mut p = pending
+                                        .lock()
+                                        .unwrap_or_else(|e| e.into_inner());
                                     p.insert(path_str.clone(), Instant::now());
                                 }
 
@@ -185,8 +212,10 @@ impl FileWatcher {
                                 );
 
                                 // 发送实时事件到前端
-                                if let Some(handle) =
-                                    event_tx.lock().unwrap().as_ref()
+                                if let Some(handle) = event_tx
+                                    .lock()
+                                    .unwrap_or_else(|e| e.into_inner())
+                                    .as_ref()
                                 {
                                     let evt = FileChangeEvent {
                                         path: path_str.clone(),
@@ -221,13 +250,12 @@ impl FileWatcher {
             }
         }
 
-        *watched.lock().unwrap() = paths;
+        *watched.lock().unwrap_or_else(|e| e.into_inner()) = paths;
         self.watcher = Some(watcher);
 
-        // 启动防抖处理线程，使用 AtomicBool 控制退出
-        let stop_signal = self.debounce_stop.clone();
-        // 重置停止信号
-        stop_signal.store(true, Ordering::SeqCst);
+        // 启动防抖处理线程 — 使用全新的 AtomicBool，避免旧线程因信号重置而复活
+        let stop_signal = Arc::new(AtomicBool::new(true));
+        self.debounce_stop = stop_signal.clone();
 
         let handle = std::thread::spawn(move || {
             while stop_signal.load(Ordering::SeqCst) {
@@ -237,7 +265,9 @@ impl FileWatcher {
                 let mut to_process = Vec::new();
 
                 {
-                    let mut p = pending_debounce.lock().unwrap();
+                    let mut p = pending_debounce
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner());
                     p.retain(|path, last_modified| {
                         let current_debounce = Duration::from_millis(
                             debounce_ms.load(Ordering::Relaxed),
@@ -256,7 +286,9 @@ impl FileWatcher {
                 for path in to_process {
                     // 去重检查
                     {
-                        let mut trig = triggered_debounce.lock().unwrap();
+                        let mut trig = triggered_debounce
+                            .lock()
+                            .unwrap_or_else(|e| e.into_inner());
                         if trig.contains_key(&path) {
                             continue;
                         }
@@ -266,8 +298,10 @@ impl FileWatcher {
                     tracing::info!("Auto-archive triggered for: {}", path);
 
                     // 发送前端通知
-                    if let Some(handle) =
-                        event_tx_debounce.lock().unwrap().as_ref()
+                    if let Some(handle) = event_tx_debounce
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .as_ref()
                     {
                         let evt = FileChangeEvent {
                             path: path.clone(),
@@ -280,7 +314,10 @@ impl FileWatcher {
                     }
 
                     // 触发自动存档
-                    if let Some(cb) = callback_debounce.lock().unwrap().as_ref()
+                    if let Some(cb) = callback_debounce
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .as_ref()
                     {
                         cb(path);
                     }
@@ -290,12 +327,17 @@ impl FileWatcher {
         self.debounce_handle = Some(handle);
 
         // 发送 watcher 启动事件
-        if let Some(handle) = self.event_sender.lock().unwrap().as_ref() {
+        if let Some(handle) = self
+            .event_sender
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+        {
             let _ = handle.emit_all(
                 "watcher-status",
                 serde_json::json!({
                     "running": true,
-                    "paths": self.watched_paths.lock().unwrap().clone(),
+                    "paths": self.watched_paths.lock().unwrap_or_else(|e| e.into_inner()).clone(),
                 }),
             );
         }
@@ -324,16 +366,35 @@ impl FileWatcher {
         }
 
         if let Some(mut watcher) = self.watcher.take() {
-            for path in self.watched_paths.lock().unwrap().iter() {
+            for path in self
+                .watched_paths
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .iter()
+            {
                 let _ = watcher.unwatch(std::path::Path::new(path));
             }
         }
-        self.watched_paths.lock().unwrap().clear();
-        self.pending_changes.lock().unwrap().clear();
-        self.triggered_paths.lock().unwrap().clear();
+        self.watched_paths
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
+        self.pending_changes
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
+        self.triggered_paths
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
 
         // 发送 watcher 停止事件
-        if let Some(handle) = self.event_sender.lock().unwrap().as_ref() {
+        if let Some(handle) = self
+            .event_sender
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+        {
             let _ = handle.emit_all(
                 "watcher-status",
                 serde_json::json!({
@@ -345,7 +406,10 @@ impl FileWatcher {
     }
 
     pub fn get_watched(&self) -> Vec<String> {
-        self.watched_paths.lock().unwrap().clone()
+        self.watched_paths
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 
     pub fn is_running(&self) -> bool {
@@ -365,7 +429,8 @@ impl FileWatcher {
             )));
         }
 
-        let mut watched = self.watched_paths.lock().unwrap();
+        let mut watched =
+            self.watched_paths.lock().unwrap_or_else(|e| e.into_inner());
         if watched.contains(&path) {
             return Ok(());
         }
@@ -390,7 +455,8 @@ impl FileWatcher {
         &mut self,
         path: &str,
     ) -> Result<(), crate::error::AppError> {
-        let mut watched = self.watched_paths.lock().unwrap();
+        let mut watched =
+            self.watched_paths.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(pos) = watched.iter().position(|p| p == path) {
             if let Some(ref mut watcher) = self.watcher {
                 let _ = watcher.unwatch(std::path::Path::new(path));

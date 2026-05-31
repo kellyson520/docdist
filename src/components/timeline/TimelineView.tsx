@@ -43,11 +43,12 @@ export function TimelineView() {
   }, [confirmAction, restoreArchive, deleteArchive]);
 
   // Get all unique tags from timeline
-  const allTags = Array.from(new Set(timeline.flatMap(a => a.tags)));
+  const allTags = Array.from(new Set(timeline.flatMap(a => a.tags ?? [])));
 
   // Filter and sort timeline
   const filteredTimeline = timeline
-    .filter(a => !filterTag || a.tags.includes(filterTag))
+    .slice()
+    .filter(a => !filterTag || (a.tags ?? []).includes(filterTag))
     .sort((a, b) => {
       const dateA = new Date(a.created_at).getTime();
       const dateB = new Date(b.created_at).getTime();
@@ -212,9 +213,9 @@ export function TimelineView() {
                   )}
 
                   {/* Tags */}
-                  {archive.tags.length > 0 && (
+                  {archive.tags?.length > 0 && (
                     <div className="mt-1 flex flex-wrap gap-1">
-                      {archive.tags.map((tag) => <TagBadge key={tag} tag={tag} />)}
+                      {archive.tags?.map((tag) => <TagBadge key={tag} tag={tag} />)}
                     </div>
                   )}
                 </div>
