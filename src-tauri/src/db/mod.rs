@@ -1657,17 +1657,19 @@ mod tests {
         let archive = make_archive("valid1", "/docs/valid.pdf", "valid.pdf");
         insert_archive(&pool, &archive).unwrap();
 
-        let conn = pool.get().unwrap();
-        raw_insert_chunk(
-            &conn,
-            "abcdef1234567890",
-            1024,
-            2,
-            "ab/abcdef1234567890",
-        )
-        .unwrap();
-        raw_insert_archive_chunk(&conn, "valid1", "abcdef1234567890", 0)
+        {
+            let conn = pool.get().unwrap();
+            raw_insert_chunk(
+                &conn,
+                "abcdef1234567890",
+                1024,
+                2,
+                "ab/abcdef1234567890",
+            )
             .unwrap();
+            raw_insert_archive_chunk(&conn, "valid1", "abcdef1234567890", 0)
+                .unwrap();
+        }
 
         // 验证全部成功读回
         let got = get_archive(&pool, "valid1").unwrap();
