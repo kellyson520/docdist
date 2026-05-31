@@ -397,4 +397,298 @@ mod tests {
         assert_eq!(additions.len(), 2);
         assert_eq!(deletions.len(), 1);
     }
+
+    #[test]
+    fn test_affected_regions_merging_within_5_lines() {
+        // Changes at lines 1, 2, and 4 should merge into a single region (gap ≤ 5)
+        let diff_result = DiffResult {
+            hunks: vec![DiffHunk {
+                old_start: 1,
+                old_lines: 5,
+                new_start: 1,
+                new_lines: 5,
+                changes: vec![
+                    DiffChange {
+                        change_type: "add".to_string(),
+                        content: "line a".to_string(),
+                        old_line: None,
+                        new_line: Some(1),
+                    },
+                    DiffChange {
+                        change_type: "add".to_string(),
+                        content: "line b".to_string(),
+                        old_line: None,
+                        new_line: Some(2),
+                    },
+                    DiffChange {
+                        change_type: "add".to_string(),
+                        content: "line c".to_string(),
+                        old_line: None,
+                        new_line: Some(4),
+                    },
+                ],
+            }],
+            stats: DiffResultStats {
+                additions: 3,
+                deletions: 0,
+                unchanged: 0,
+            },
+        };
+        let gen = SummaryGenerator::new();
+        let summary = gen.generate(&diff_result);
+        assert_eq!(
+            summary.affected_regions.len(),
+            1,
+            "Changes at lines 1,2,4 should merge into one region (gap ≤ 5)"
+        );
+        assert_eq!(summary.affected_regions[0].start_line, 1);
+        assert_eq!(summary.affected_regions[0].end_line, 4);
+    }
+
+    #[test]
+    fn test_affected_regions_separated_by_gap() {
+        // Changes at lines 1-2 and line 20 should produce two separate regions (gap > 5)
+        let diff_result = DiffResult {
+            hunks: vec![DiffHunk {
+                old_start: 1,
+                old_lines: 20,
+                new_start: 1,
+                new_lines: 20,
+                changes: vec![
+                    DiffChange {
+                        change_type: "add".to_string(),
+                        content: "early".to_string(),
+                        old_line: None,
+                        new_line: Some(1),
+                    },
+                    DiffChange {
+                        change_type: "add".to_string(),
+                        content: "early2".to_string(),
+                        old_line: None,
+                        new_line: Some(2),
+                    },
+                    DiffChange {
+                        change_type: "add".to_string(),
+                        content: "late".to_string(),
+                        old_line: None,
+                        new_line: Some(20),
+                    },
+                ],
+            }],
+            stats: DiffResultStats {
+                additions: 3,
+                deletions: 0,
+                unchanged: 0,
+            },
+        };
+        let gen = SummaryGenerator::new();
+        let summary = gen.generate(&diff_result);
+        assert_eq!(
+            summary.affected_regions.len(),
+            2,
+            "Gap between line 2 and 20 (>5) should produce two separate regions"
+        );
+        assert_eq!(summary.affected_regions[0].start_line, 1);
+        assert_eq!(summary.affected_regions[0].end_line, 2);
+        assert_eq!(summary.affected_regions[1].start_line, 20);
+        assert_eq!(summary.affected_regions[1].end_line, 20);
+    }
+
+    #[test]
+    fn test_snippet_truncated_to_50_chars() {
+        let long_content = "a".repeat(80);
+        let diff_result = DiffResult {
+            hunks: vec![DiffHunk {
+                old_start: 1,
+                old_lines: 1,
+                new_start: 1,
+                new_lines: 1,
+                changes: vec![DiffChange {
+                    change_type: "add".to_string(),
+                    content: long_content.clone(),
+                    old_line: None,
+                    new_line: Some(1),
+                }],
+            }],
+            stats: DiffResultStats {
+                additions: 1,
+                deletions: 0,
+                unchanged: 0,
+            },
+        };
+        let gen = SummaryGenerator::new();
+        let summary = gen.generate(&diff_result);
+        assert_eq!(summary.changes.len(), 1);
+        // The snippet field stores the full content
+        assert_eq!(summary.changes[0].snippet.as_ref().unwrap(), &long_content);
+        // The description uses the truncated version (50 chars max from extract_hunk_changes)
+        let desc = &summary.changes[0].description;
+        // description is "新增: {50-char snippet}"
+        let snippet_part = desc.strip_prefix("新增: ").unwrap();
+        assert_eq!(snippet_part.len(), 50);
+        assert_eq!(snippet_part, "a".repeat(50));
+    }
+
+    #[test]
+    fn test_change_ids_sequential() {
+        let diff_result = DiffResult {
+            hunks: vec![DiffHunk {
+                old_start: 1,
+                old_lines: 3,
+                new_start: 1,
+                new_lines: 3,
+                changes: vec![
+                    DiffChange {
+                        change_type: "add".to_string(),
+                        content: "a".to_string(),
+                        old_line: None,
+                        new_line: Some(1),
+                    },
+                    DiffChange {
+                        change_type: "delete".to_string(),
+                        content: "b".to_string(),
+                        old_line: Some(2),
+                        new_line: None,
+                    },
+                    DiffChange {
+                        change_type: "add".to_string(),
+                        content: "c".to_string(),
+                        old_line: None,
+                        new_line: Some(3),
+                    },
+                ],
+            }],
+            stats: DiffResultStats {
+                additions: 2,
+                deletions: 1,
+                unchanged: 0,
+            },
+        };
+        let gen = SummaryGenerator::new();
+        let summary = gen.generate(&diff_result);
+        assert_eq!(summary.changes.len(), 3);
+        assert_eq!(summary.changes[0].id, 0);
+        assert_eq!(summary.changes[1].id, 1);
+        assert_eq!(summary.changes[2].id, 2);
+    }
+
+    #[test]
+    fn test_equal_changes_skipped() {
+        let diff_result = DiffResult {
+            hunks: vec![DiffHunk {
+                old_start: 1,
+                old_lines: 4,
+                new_start: 1,
+                new_lines: 4,
+                changes: vec![
+                    DiffChange {
+                        change_type: "equal".to_string(),
+                        content: "unchanged 1".to_string(),
+                        old_line: Some(1),
+                        new_line: Some(1),
+                    },
+                    DiffChange {
+                        change_type: "equal".to_string(),
+                        content: "unchanged 2".to_string(),
+                        old_line: Some(2),
+                        new_line: Some(2),
+                    },
+                    DiffChange {
+                        change_type: "add".to_string(),
+                        content: "new".to_string(),
+                        old_line: None,
+                        new_line: Some(3),
+                    },
+                ],
+            }],
+            stats: DiffResultStats {
+                additions: 1,
+                deletions: 0,
+                unchanged: 2,
+            },
+        };
+        let gen = SummaryGenerator::new();
+        let summary = gen.generate(&diff_result);
+        // Only the "add" change should be extracted; both "equal" entries are skipped
+        assert_eq!(summary.changes.len(), 1);
+        assert_eq!(summary.changes[0].change_type, ChangeType::Addition);
+    }
+
+    #[test]
+    fn test_stats_total_field() {
+        let diff_result = DiffResult {
+            hunks: vec![DiffHunk {
+                old_start: 1,
+                old_lines: 5,
+                new_start: 1,
+                new_lines: 5,
+                changes: vec![
+                    DiffChange {
+                        change_type: "delete".to_string(),
+                        content: "old".to_string(),
+                        old_line: Some(1),
+                        new_line: None,
+                    },
+                    DiffChange {
+                        change_type: "add".to_string(),
+                        content: "new".to_string(),
+                        old_line: None,
+                        new_line: Some(1),
+                    },
+                ],
+            }],
+            stats: DiffResultStats {
+                additions: 3,
+                deletions: 2,
+                unchanged: 10,
+            },
+        };
+        let gen = SummaryGenerator::new();
+        let summary = gen.generate(&diff_result);
+        assert_eq!(summary.stats.additions, 3);
+        assert_eq!(summary.stats.deletions, 2);
+        assert_eq!(summary.stats.unchanged, 10);
+        assert_eq!(summary.stats.total, 15); // 3 + 2 + 10
+    }
+
+    #[test]
+    fn test_ai_summary_format_string() {
+        let diff_result = DiffResult {
+            hunks: vec![DiffHunk {
+                old_start: 1,
+                old_lines: 3,
+                new_start: 1,
+                new_lines: 3,
+                changes: vec![
+                    DiffChange {
+                        change_type: "add".to_string(),
+                        content: "a".to_string(),
+                        old_line: None,
+                        new_line: Some(1),
+                    },
+                    DiffChange {
+                        change_type: "add".to_string(),
+                        content: "b".to_string(),
+                        old_line: None,
+                        new_line: Some(2),
+                    },
+                    DiffChange {
+                        change_type: "delete".to_string(),
+                        content: "c".to_string(),
+                        old_line: Some(3),
+                        new_line: None,
+                    },
+                ],
+            }],
+            stats: DiffResultStats {
+                additions: 2,
+                deletions: 1,
+                unchanged: 0,
+            },
+        };
+        let gen = SummaryGenerator::new();
+        let summary = gen.generate(&diff_result);
+        let ai = summary.ai_summary.unwrap();
+        assert_eq!(ai, "共 3 处变更：新增 2 处，删除 1 处");
+    }
 }
