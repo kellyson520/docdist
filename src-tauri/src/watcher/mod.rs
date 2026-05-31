@@ -83,6 +83,7 @@ impl FileWatcher {
     }
 
     /// 设置自动存档回调
+    #[allow(dead_code)]
     fn emit_event(&self, event: FileChangeEvent) {
         if let Some(handle) = self.event_sender.lock().unwrap().as_ref() {
             let _ = handle.emit_all("file-changed", &event);
@@ -90,6 +91,7 @@ impl FileWatcher {
     }
 
     /// 触发自动存档
+    #[allow(dead_code)]
     fn trigger_auto_archive(&self, path: String) {
         // 去重：同一文件在防抖窗口内只触发一次
         {
