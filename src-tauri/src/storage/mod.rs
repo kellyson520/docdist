@@ -232,7 +232,11 @@ mod tests {
 
         assert_eq!(chunk_hashes.len(), 1, "小文件应只有 1 个 chunk");
         assert_eq!(chunk_sizes.len(), 1);
-        assert_eq!(file_size, 12, "文件大小应为 12 字节");
+        assert_eq!(
+            file_size,
+            b"small content".len() as u64,
+            "文件大小应与内容一致"
+        );
         assert!(!checksum.is_empty());
         // 验证 chunk 文件实际存在
         let prefix = hash_prefix(&chunk_hashes[0]).unwrap();

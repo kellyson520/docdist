@@ -261,18 +261,23 @@ mod tests {
     fn test_load_partial_json_fills_defaults() {
         let dir = tempdir().unwrap();
         let config_path = dir.path().join("config.json");
-        std::fs::write(&config_path, r#"{"language":"en-US","theme":"dark"}"#)
-            .unwrap();
+        // 写入包含嵌套结构的部分 JSON — serde 会用 Default 补全缺失字段
+        std::fs::write(
+            &config_path,
+            r#"{"watcher":{"enabled":true},"storage":{"chunk_size":8192},"log":{"level":"debug"},"language":"en-US","theme":"dark"}"#,
+        )
+        .unwrap();
 
         let config = AppConfig::load(dir.path());
         // Overridden fields
         assert_eq!(config.language, "en-US");
         assert_eq!(config.theme, "dark");
-        // Default fields
+        assert_eq!(config.storage.chunk_size, 8192);
+        assert_eq!(config.log.level, "debug");
+        assert!(config.watcher.enabled);
+        // Default fields (not specified in JSON)
         assert!(!config.auto_start);
         assert!(config.minimize_to_tray);
-        assert_eq!(config.storage.chunk_size, 4096);
-        assert_eq!(config.log.level, "info");
-        assert!(!config.watcher.enabled);
+        assert!(config.storage.deduplication);
     }
 }
