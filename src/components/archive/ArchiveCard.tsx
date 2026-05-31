@@ -39,20 +39,20 @@ function ArchiveCardInner({
   const getFileColor = (name: string) => {
     const ext = name.split('.').pop()?.toLowerCase() || '';
     const colors: Record<string, string> = {
-      rs: 'text-orange-500 bg-orange-50',
-      ts: 'text-blue-500 bg-blue-50',
-      tsx: 'text-cyan-500 bg-cyan-50',
-      js: 'text-yellow-500 bg-yellow-50',
-      jsx: 'text-sky-500 bg-sky-50',
-      py: 'text-green-500 bg-green-50',
-      md: 'text-gray-500 bg-gray-50',
-      json: 'text-amber-500 bg-amber-50',
-      html: 'text-red-500 bg-red-50',
-      css: 'text-purple-500 bg-purple-50',
-      go: 'text-teal-500 bg-teal-50',
-      txt: 'text-gray-400 bg-gray-50',
+      rs: 'text-orange-500 bg-orange-50 dark:bg-orange-900/20',
+      ts: 'text-blue-500 bg-blue-50 dark:bg-blue-900/20',
+      tsx: 'text-cyan-500 bg-cyan-50 dark:bg-cyan-900/20',
+      js: 'text-yellow-500 bg-yellow-50 dark:bg-yellow-900/20',
+      jsx: 'text-sky-500 bg-sky-50 dark:bg-sky-900/20',
+      py: 'text-green-500 bg-green-50 dark:bg-green-900/20',
+      md: 'text-gray-500 bg-gray-50 dark:bg-gray-700',
+      json: 'text-amber-500 bg-amber-50 dark:bg-amber-900/20',
+      html: 'text-red-500 bg-red-50 dark:bg-red-900/20',
+      css: 'text-purple-500 bg-purple-50 dark:bg-purple-900/20',
+      go: 'text-teal-500 bg-teal-50 dark:bg-teal-900/20',
+      txt: 'text-gray-400 bg-gray-50 dark:bg-gray-700',
     };
-    return colors[ext] || 'text-gray-400 bg-gray-50';
+    return colors[ext] || 'text-gray-400 bg-gray-50 dark:bg-gray-700';
   };
 
   const fileColor = getFileColor(archive.file_name);
@@ -78,7 +78,7 @@ function ArchiveCardInner({
               {isMultiSelected ? (
                 <CheckSquare className="w-4 h-4 text-primary-500" />
               ) : (
-                <Square className="w-4 h-4 text-gray-300 group-hover:text-gray-400 transition" />
+                <Square className="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-gray-400 dark:group-hover:text-gray-500 transition" />
               )}
             </button>
           )}
@@ -93,7 +93,7 @@ function ArchiveCardInner({
             <h3 className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">
               {archive.file_name}
             </h3>
-            <p className="text-xs text-gray-400 mt-0.5 truncate" title={archive.file_path}>
+            <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5 truncate" title={archive.file_path}>
               {archive.file_path}
             </p>
           </div>
@@ -132,7 +132,7 @@ function ArchiveCardInner({
                 <div className="absolute right-0 top-full mt-1 w-36 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg py-1 z-10 animate-scale-in">
                   <button
                     onClick={(e) => { e.stopPropagation(); onDelete(); setShowMenu(false); }}
-                    className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition"
+                    className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                     删除
@@ -145,7 +145,7 @@ function ArchiveCardInner({
 
         {/* Note */}
         {archive.note && (
-          <p className="text-xs text-gray-500 mt-2 ml-13 line-clamp-2">
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-2 ml-13 line-clamp-2">
             {archive.note}
           </p>
         )}
@@ -160,7 +160,7 @@ function ArchiveCardInner({
         )}
 
         {/* Meta info */}
-        <div className="flex items-center gap-4 mt-3 ml-13 text-[11px] text-gray-400">
+        <div className="flex items-center gap-4 mt-3 ml-13 text-[11px] text-gray-400 dark:text-gray-500">
           <span className="flex items-center gap-1">
             <Clock className="w-3 h-3" />
             {formatSmartTime(archive.created_at)}
@@ -174,7 +174,7 @@ function ArchiveCardInner({
             {archive.chunk_count} 块
           </span>
           {archive.parent_id && (
-            <span className="flex items-center gap-1 text-primary-400">
+            <span className="flex items-center gap-1 text-primary-400 dark:text-primary-500">
               <GitCompare className="w-3 h-3" />
               迭代版本
             </span>

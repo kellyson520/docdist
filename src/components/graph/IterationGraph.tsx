@@ -60,7 +60,7 @@ function TreeNodeComponent({
         <div className="flex flex-col items-center">
           <div
             className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 cursor-pointer transition-all
-              ${hasChildren ? 'bg-primary-100 text-primary-600 hover:bg-primary-200' : 'bg-gray-100 text-gray-400'}`}
+              ${hasChildren ? 'bg-primary-100 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400 hover:bg-primary-200 dark:hover:bg-primary-800/40' : 'bg-gray-100 dark:bg-gray-700 text-gray-400 dark:text-gray-500'}`}
             onClick={() => hasChildren && toggleNode(node.archive.id)}
           >
             {hasChildren ? (
@@ -74,20 +74,20 @@ function TreeNodeComponent({
             )}
           </div>
           {hasChildren && isExpanded && (
-            <div className="w-0.5 h-full bg-gray-200 mt-1" />
+            <div className="w-0.5 h-full bg-gray-200 dark:bg-gray-700 mt-1" />
           )}
         </div>
 
         {/* Node content */}
         <div
-          className="flex-1 p-3 bg-white rounded-lg border border-gray-200 hover:border-primary-300 cursor-pointer transition group"
+          className="flex-1 p-3 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-primary-300 dark:hover:border-primary-600 cursor-pointer transition group"
           onClick={() => onSelect(node.archive)}
         >
           <div className="flex items-center justify-between">
-            <span className="text-sm font-medium truncate">{node.archive.file_name}</span>
-            <span className="text-xs text-gray-400">{formatSmartTime(node.archive.created_at)}</span>
+            <span className="text-sm font-medium truncate dark:text-gray-200">{node.archive.file_name}</span>
+            <span className="text-xs text-gray-400 dark:text-gray-500">{formatSmartTime(node.archive.created_at)}</span>
           </div>
-          <div className="flex items-center gap-2 mt-1 text-xs text-gray-500">
+          <div className="flex items-center gap-2 mt-1 text-xs text-gray-500 dark:text-gray-400">
             <span>{formatFileSize(node.archive.file_size)}</span>
             {node.archive.note && (
               <>
@@ -99,13 +99,13 @@ function TreeNodeComponent({
           <div className="mt-2 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
             <button
               onClick={(e) => { e.stopPropagation(); onRestore(node.archive.id); }}
-              className="flex items-center gap-1 text-xs text-primary-600 hover:underline"
+              className="flex items-center gap-1 text-xs text-primary-600 dark:text-primary-400 hover:underline"
             >
               <RotateCcw className="w-3 h-3" />
               恢复
             </button>
             {hasChildren && (
-              <span className="text-xs text-gray-400">
+              <span className="text-xs text-gray-400 dark:text-gray-500">
                 {node.children.length} 个子版本
               </span>
             )}
@@ -198,45 +198,45 @@ export function IterationGraph() {
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-gray-100">
+      <div className="flex items-center justify-between p-4 border-b border-gray-100 dark:border-gray-700">
         <div className="flex items-center gap-2">
           <GitBranch className="w-5 h-5 text-primary-500" />
-          <h2 className="font-semibold text-lg">迭代关系图</h2>
-          <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
+          <h2 className="font-semibold text-lg dark:text-white">迭代关系图</h2>
+          <span className="text-xs text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded-full">
             {tree.length} 个根节点
           </span>
         </div>
 
         <div className="flex items-center gap-2">
           {/* Zoom Controls */}
-          <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
+          <div className="flex items-center gap-1 bg-gray-100 dark:bg-gray-700 rounded-lg p-0.5">
             <button
               onClick={handleZoomOut}
-              className="p-1 hover:bg-white rounded transition"
+              className="p-1 hover:bg-white dark:hover:bg-gray-600 rounded transition"
               title="缩小"
             >
-              <ZoomOut className="w-3.5 h-3.5 text-gray-600" />
+              <ZoomOut className="w-3.5 h-3.5 text-gray-600 dark:text-gray-400" />
             </button>
-            <span className="text-xs text-gray-600 px-1">{Math.round(zoom * 100)}%</span>
+            <span className="text-xs text-gray-600 dark:text-gray-400 px-1">{Math.round(zoom * 100)}%</span>
             <button
               onClick={handleZoomIn}
-              className="p-1 hover:bg-white rounded transition"
+              className="p-1 hover:bg-white dark:hover:bg-gray-600 rounded transition"
               title="放大"
             >
-              <ZoomIn className="w-3.5 h-3.5 text-gray-600" />
+              <ZoomIn className="w-3.5 h-3.5 text-gray-600 dark:text-gray-400" />
             </button>
           </div>
 
           {/* Expand/Collapse */}
           <button
             onClick={expandAll}
-            className="px-2 py-1.5 text-xs text-gray-600 hover:bg-gray-100 rounded transition"
+            className="px-2 py-1.5 text-xs text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition"
           >
             展开全部
           </button>
           <button
             onClick={collapseAll}
-            className="px-2 py-1.5 text-xs text-gray-600 hover:bg-gray-100 rounded transition"
+            className="px-2 py-1.5 text-xs text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition"
           >
             折叠全部
           </button>
@@ -246,7 +246,7 @@ export function IterationGraph() {
       {/* Graph */}
       <div className="flex-1 overflow-auto p-4">
         {tree.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-64 text-gray-400">
+          <div className="flex flex-col items-center justify-center h-64 text-gray-400 dark:text-gray-500">
             <GitBranch className="w-12 h-12 mb-3 opacity-30" />
             <p className="text-sm">暂无存档关系</p>
             <p className="text-xs mt-1">创建存档时可以指定父存档，形成迭代关系</p>

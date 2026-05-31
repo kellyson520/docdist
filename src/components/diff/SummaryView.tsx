@@ -31,11 +31,11 @@ export function SummaryView({ summary }: SummaryViewProps) {
 
 function StatCard({ label, value, color }: { label: string; value: number; color: string }) {
   const colorMap: Record<string, string> = {
-    green: 'bg-green-50 text-green-700 border-green-200',
-    red: 'bg-red-50 text-red-700 border-red-200',
-    yellow: 'bg-yellow-50 text-yellow-700 border-yellow-200',
-    blue: 'bg-blue-50 text-blue-700 border-blue-200',
-    purple: 'bg-purple-50 text-purple-700 border-purple-200',
+    green: 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800',
+    red: 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 border-red-200 dark:border-red-800',
+    yellow: 'bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-400 border-yellow-200 dark:border-yellow-800',
+    blue: 'bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800',
+    purple: 'bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-400 border-purple-200 dark:border-purple-800',
   };
 
   return (
@@ -64,15 +64,15 @@ function ChangeItem({ change }: { change: ChangeSummary }) {
   const Icon = config.icon;
 
   return (
-    <div className="border rounded-lg overflow-hidden">
+    <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
       <button
         onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center gap-3 p-3 hover:bg-gray-50 dark:hover:bg-gray-700"
+        className="w-full flex items-center gap-3 p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50"
       >
         <Icon className={`w-4 h-4 ${config.color}`} />
         <div className="flex-1 text-left">
-          <div className="font-medium">{change.description}</div>
-          <div className="text-sm text-gray-500">
+          <div className="font-medium dark:text-gray-200">{change.description}</div>
+          <div className="text-sm text-gray-500 dark:text-gray-400">
             第 {change.location.start_line} - {change.location.end_line} 行
             {change.location.region_description && (
               <span className="ml-2">• {change.location.region_description}</span>
@@ -80,14 +80,14 @@ function ChangeItem({ change }: { change: ChangeSummary }) {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-sm text-gray-500">{change.line_count} 行</span>
-          {expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+          <span className="text-sm text-gray-500 dark:text-gray-400">{change.line_count} 行</span>
+          {expanded ? <ChevronUp className="w-4 h-4 text-gray-400 dark:text-gray-500" /> : <ChevronDown className="w-4 h-4 text-gray-400 dark:text-gray-500" />}
         </div>
       </button>
 
       {expanded && change.snippet && (
         <div className="px-3 pb-3">
-          <pre className="p-2 bg-gray-100 dark:bg-gray-800 rounded text-xs font-mono overflow-x-auto">
+          <pre className="p-2 bg-gray-100 dark:bg-gray-800 rounded text-xs font-mono overflow-x-auto text-gray-700 dark:text-gray-300">
             {change.snippet}
           </pre>
         </div>

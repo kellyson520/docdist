@@ -211,6 +211,7 @@ export const useArchiveStore = create<ArchiveState>((set, get) => ({
       // Refresh list
       const { fetchArchives, searchQuery } = get();
       await fetchArchives(undefined, searchQuery || undefined);
+      await get().fetchStatistics();
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       log.error('创建存档失败', msg);
@@ -229,6 +230,7 @@ export const useArchiveStore = create<ArchiveState>((set, get) => ({
       log.info('存档已恢复', { id });
       toast.success('恢复成功', '文件已恢复到指定位置');
       set({ loading: false });
+      await get().fetchStatistics();
     } catch (e: unknown) {
       set({ error: e instanceof Error ? e.message : String(e), loading: false });
     }
@@ -245,6 +247,7 @@ export const useArchiveStore = create<ArchiveState>((set, get) => ({
       newSelected.delete(id);
       set({ selectedIds: newSelected });
       await fetchArchives(undefined, searchQuery || undefined);
+      await get().fetchStatistics();
     } catch (e: unknown) {
       set({ error: e instanceof Error ? e.message : String(e), loading: false });
     }
@@ -257,6 +260,7 @@ export const useArchiveStore = create<ArchiveState>((set, get) => ({
       const { fetchArchives, searchQuery } = get();
       set({ selectedIds: new Set() });
       await fetchArchives(undefined, searchQuery || undefined);
+      await get().fetchStatistics();
       return count;
     } catch (e: unknown) {
       set({ error: e instanceof Error ? e.message : String(e), loading: false });
@@ -288,7 +292,7 @@ export const useArchiveStore = create<ArchiveState>((set, get) => ({
   },
 
   compareArchivesEnhanced: async (id1: string, id2: string) => {
-    set({ loading: true, error: null });
+    set({ loading: true, error: null, enhancedDiffResult: null });
     try {
       const result = await invoke<EnhancedDiffResult>('compare_archives_enhanced', { id1, id2 });
       set({ enhancedDiffResult: result, loading: false });
@@ -471,6 +475,7 @@ export const useArchiveStore = create<ArchiveState>((set, get) => ({
         // 刷新列表
         const { fetchArchives, searchQuery } = get();
         await fetchArchives(undefined, searchQuery || undefined);
+        await get().fetchStatistics();
       } catch (e) {
         console.error('Auto-archive failed:', e);
       }

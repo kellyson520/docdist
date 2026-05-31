@@ -44,7 +44,7 @@ export function TimelineView() {
 
   if (!selectedArchive) {
     return (
-      <div className="flex flex-col items-center justify-center h-full text-gray-400">
+      <div className="flex flex-col items-center justify-center h-full text-gray-400 dark:text-gray-500">
         <Clock className="w-12 h-12 mb-3 opacity-30" />
         <p className="text-sm">请先选择一个文件</p>
         <p className="text-xs mt-1">在存档列表中选择文件查看时间轴</p>
@@ -55,11 +55,11 @@ export function TimelineView() {
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-gray-100">
+      <div className="flex items-center justify-between p-4 border-b border-gray-100 dark:border-gray-700">
         <div className="flex items-center gap-2">
           <Clock className="w-5 h-5 text-primary-500" />
-          <h2 className="font-semibold text-lg">时间轴</h2>
-          <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
+          <h2 className="font-semibold text-lg dark:text-white">时间轴</h2>
+          <span className="text-xs text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded-full">
             {filteredTimeline.length} 个版本
           </span>
         </div>
@@ -68,7 +68,7 @@ export function TimelineView() {
           {/* Sort Button */}
           <button
             onClick={() => setSortOrder(prev => prev === 'newest' ? 'oldest' : 'newest')}
-            className="flex items-center gap-1 px-2 py-1.5 text-xs text-gray-600 hover:bg-gray-100 rounded transition"
+            className="flex items-center gap-1 px-2 py-1.5 text-xs text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition"
           >
             {sortOrder === 'newest' ? '最新优先' : '最早优先'}
           </button>
@@ -78,7 +78,7 @@ export function TimelineView() {
             <button
               onClick={() => setShowFilters(!showFilters)}
               className={`flex items-center gap-1 px-2 py-1.5 text-xs rounded transition ${
-                filterTag ? 'bg-primary-100 text-primary-700' : 'text-gray-600 hover:bg-gray-100'
+                filterTag ? 'bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-400' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
               }`}
             >
               <Filter className="w-3.5 h-3.5" />
@@ -89,23 +89,23 @@ export function TimelineView() {
       </div>
 
       {/* File Info */}
-      <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
+      <div className="px-4 py-3 bg-gray-50 dark:bg-gray-800/50 border-b border-gray-200 dark:border-gray-700">
         <div className="flex items-center gap-2">
-          <FileText className="w-4 h-4 text-gray-400" />
+          <FileText className="w-4 h-4 text-gray-400 dark:text-gray-500" />
           <div className="min-w-0">
-            <p className="text-sm font-medium truncate">{selectedArchive.file_name}</p>
-            <p className="text-xs text-gray-500 truncate">{selectedArchive.file_path}</p>
+            <p className="text-sm font-medium truncate dark:text-gray-200">{selectedArchive.file_name}</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{selectedArchive.file_path}</p>
           </div>
         </div>
       </div>
 
       {/* Filter Tags */}
       {showFilters && allTags.length > 0 && (
-        <div className="px-4 py-2 border-b border-gray-200 flex flex-wrap gap-1">
+        <div className="px-4 py-2 border-b border-gray-200 dark:border-gray-700 flex flex-wrap gap-1">
           <button
             onClick={() => setFilterTag(null)}
             className={`px-2 py-1 text-xs rounded-full transition ${
-              !filterTag ? 'bg-primary-100 text-primary-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              !filterTag ? 'bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-400' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600'
             }`}
           >
             全部
@@ -115,7 +115,7 @@ export function TimelineView() {
               key={tag}
               onClick={() => setFilterTag(filterTag === tag ? null : tag)}
               className={`px-2 py-1 text-xs rounded-full transition ${
-                filterTag === tag ? 'bg-primary-100 text-primary-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                filterTag === tag ? 'bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-400' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600'
               }`}
             >
               {tag}
@@ -128,7 +128,7 @@ export function TimelineView() {
       <div className="flex-1 overflow-y-auto p-4">
         <div className="relative pl-6">
           {/* Vertical line */}
-          <div className="absolute left-2 top-0 bottom-0 w-0.5 bg-gray-200" />
+          <div className="absolute left-2 top-0 bottom-0 w-0.5 bg-gray-200 dark:bg-gray-700" />
 
           {filteredTimeline.map((archive, index) => {
             const isCompareSelected = selectedForCompare === archive.id;
@@ -137,24 +137,24 @@ export function TimelineView() {
               <div key={archive.id} className="relative mb-6 animate-slide-in" style={{ animationDelay: `${index * 50}ms` }}>
                 {/* Dot */}
                 <div className={`absolute -left-4 top-1.5 w-3 h-3 rounded-full border-2 transition-colors
-                  ${index === 0 ? 'bg-primary-500 border-primary-300' : 'bg-white border-gray-300'}
+                  ${index === 0 ? 'bg-primary-500 border-primary-300' : 'bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600'}
                   ${isCompareSelected ? 'bg-blue-500 border-blue-300' : ''}
                 `} />
 
                 <div className={`p-3 rounded-lg border transition-all
                   ${isCompareSelected
-                    ? 'border-blue-300 bg-blue-50'
+                    ? 'border-blue-300 dark:border-blue-600 bg-blue-50 dark:bg-blue-900/20'
                     : index === 0
-                    ? 'border-primary-300 bg-primary-50'
-                    : 'border-gray-200 bg-white hover:border-gray-300'
+                    ? 'border-primary-300 dark:border-primary-700 bg-primary-50 dark:bg-primary-900/20'
+                    : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:border-gray-300 dark:hover:border-gray-600'
                   }`}
                 >
                   {/* Header */}
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <span className="text-xs text-gray-500">{formatSmartTime(archive.created_at)}</span>
+                      <span className="text-xs text-gray-500 dark:text-gray-400">{formatSmartTime(archive.created_at)}</span>
                       {index === 0 && (
-                        <span className="px-1.5 py-0.5 text-xs bg-primary-100 text-primary-700 rounded">
+                        <span className="px-1.5 py-0.5 text-xs bg-primary-100 dark:bg-primary-900/40 text-primary-700 dark:text-primary-400 rounded">
                           最新
                         </span>
                       )}
@@ -163,7 +163,7 @@ export function TimelineView() {
                       <button
                         onClick={() => handleCompare(archive.id)}
                         className={`p-1 rounded transition ${
-                          isCompareSelected ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100 text-gray-400'
+                          isCompareSelected ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400' : 'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400'
                         }`}
                         title={isCompareSelected ? '取消选择' : '选择对比'}
                       >
@@ -171,14 +171,14 @@ export function TimelineView() {
                       </button>
                       <button
                         onClick={() => restoreArchive(archive.id)}
-                        className="p-1 hover:bg-gray-100 rounded text-gray-400"
+                        className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-gray-400"
                         title="恢复此版本"
                       >
                         <RotateCcw className="w-3.5 h-3.5" />
                       </button>
                       <button
                         onClick={() => deleteArchive(archive.id)}
-                        className="p-1 hover:bg-red-50 rounded text-gray-400"
+                        className="p-1 hover:bg-red-50 dark:hover:bg-red-900/20 rounded text-gray-400"
                         title="删除"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
@@ -187,16 +187,16 @@ export function TimelineView() {
                   </div>
 
                   {/* Meta */}
-                  <div className="mt-1 text-xs text-gray-500">
+                  <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                     {formatFileSize(archive.file_size)} · {archive.chunk_count} 块
                     {archive.checksum && (
-                      <span className="ml-2 text-gray-400">#{archive.checksum.slice(0, 8)}</span>
+                      <span className="ml-2 text-gray-400 dark:text-gray-500">#{archive.checksum.slice(0, 8)}</span>
                     )}
                   </div>
 
                   {/* Note */}
                   {archive.note && (
-                    <p className="mt-1 text-xs text-gray-600">{archive.note}</p>
+                    <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">{archive.note}</p>
                   )}
 
                   {/* Tags */}
@@ -211,7 +211,7 @@ export function TimelineView() {
           })}
 
           {filteredTimeline.length === 0 && (
-            <div className="text-center text-gray-400 py-8">
+            <div className="text-center text-gray-400 dark:text-gray-500 py-8">
               <p className="text-sm">暂无历史记录</p>
               {filterTag && (
                 <button

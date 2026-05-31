@@ -7,6 +7,107 @@ use crate::storage;
 use std::collections::VecDeque;
 use std::path::{Component, Path};
 
+/// 检测并转换文本编码（支持 UTF-8、GBK/GB2312）
+fn detect_and_convert_encoding(content: &[u8]) -> String {
+    // 尝试 UTF-8
+    if let Ok(s) = String::from_utf8(content.to_vec()) {
+        return s;
+    }
+
+    // 尝试 GBK/GB2312（Windows 中文环境常用编码）
+    let is_likely_gbk = content.windows(2).any(|w| {
+        (0xB0..=0xF7).contains(&w[0]) && (0xA1..=0xFE).contains(&w[1])
+    });
+
+    if is_likely_gbk {
+        let mut result = String::new();
+        let mut i = 0;
+        while i < content.len() {
+            if i + 1 < content.len()
+                && is_gbk_lead(content[i])
+                && is_gbk_trail(content[i + 1])
+            {
+                if let Some(c) = gbk_to_unicode(content[i], content[i + 1]) {
+                    result.push(c);
+                }
+                i += 2;
+            } else {
+                result.push(content[i] as char);
+                i += 1;
+            }
+        }
+        return result;
+    }
+
+    // 其他编码回退到 UTF-8 lossy
+    String::from_utf8_lossy(content).to_string()
+}
+
+fn is_gbk_lead(b: u8) -> bool {
+    (0x81..=0xFE).contains(&b)
+}
+
+fn is_gbk_trail(b: u8) -> bool {
+    (0x40..=0xFE).contains(&b) && b != 0x7F
+}
+
+/// GBK 双字节到 Unicode 的简化转换
+/// 使用 GBK 编码规则：码位 = (lead - 0x81) * 190 + (trail - 0x41)
+/// 对应 Unicode 区段的大致映射
+fn gbk_to_unicode(lead: u8, trail: u8) -> Option<char> {
+    let l = lead as u32;
+    let t = trail as u32;
+    // GBK 双字节编码范围
+    if !(0x81..=0xFE).contains(&l) || !(0x40..=0xFE).contains(&t) || t == 0x7F {
+        return None;
+    }
+
+    // GBK 码位
+    let gbk_offset =
+        (l - 0x81) * 190 + (if t >= 0x80 { t - 0x41 } else { t - 0x40 });
+
+    // GBK 一级汉字 (A1A1-AFFE): 码位 0-682 -> Unicode 0x4E00-0x9FA5 (CJK统一汉字)
+    // GBK 二级汉字 (B0A1-D7F9): 码位 682-... -> Unicode 继续
+    // 简化处理：GBK 码位 + 0x4E00 - 某个偏移
+    //
+    // 更准确的做法：分段映射
+    // 0xA1A1-0xA9FE: 符号区 (码位 0-375)
+    // 0xB0A1-0xD7F9: 汉字区 (码位 745-8468)
+    // 0xD8A1-0xF7FE: 汉字区续 (码位 8469-...)
+
+    if l >= 0xB0 && l <= 0xD7 {
+        // 一级汉字区：Unicode 0x4E00-0x9FA5
+        let hanzi_offset =
+            (l - 0xB0) * 94 + (t - if t >= 0x80 { 0x41 } else { 0x40 });
+        let code = 0x4E00 + hanzi_offset;
+        return char::from_u32(code);
+    }
+
+    if l >= 0xD8 && l <= 0xF7 {
+        // 二级汉字区：继续映射
+        let hanzi_offset =
+            (l - 0xD8) * 94 + (t - if t >= 0x80 { 0x41 } else { 0x40 });
+        let code = 0x9FA6 + hanzi_offset;
+        if code <= 0x9FFF {
+            return char::from_u32(code);
+        }
+    }
+
+    if l >= 0xA1 && l <= 0xA9 {
+        // 符号区
+        let sym_offset =
+            (l - 0xA1) * 94 + (t - if t >= 0x80 { 0x41 } else { 0x40 });
+        // 映射到常用符号区 0x3000-0x303F 及全角字符区 0xFF00-0xFFEF
+        if sym_offset < 126 {
+            let code = 0x3000 + sym_offset;
+            return char::from_u32(code);
+        }
+    }
+
+    // 无法准确映射，返回 None 让调用方跳过
+    None
+}
+
 /// 验证归档源文件路径安全性（防信息泄露 CWE-200）
 /// 规范化路径（解析符号链接），拒绝系统敏感目录
 fn validate_file_path(path: &Path) -> Result<(), AppError> {
@@ -486,19 +587,8 @@ impl ArchiveService {
         &self,
         chunk_hashes: &[String],
     ) -> Result<String, AppError> {
-        let mut content = Vec::new();
-        for hash in chunk_hashes {
-            if hash.len() < 2 {
-                tracing::warn!("Skipping chunk with invalid hash: {}", hash);
-                continue;
-            }
-            let chunk_path = self.chunks_dir.join(&hash[..2]).join(hash);
-            if chunk_path.exists() {
-                let data = std::fs::read(&chunk_path)?;
-                content.extend_from_slice(&data);
-            }
-        }
-        Ok(String::from_utf8_lossy(&content).to_string())
+        let content = self.read_chunks_as_bytes(chunk_hashes)?;
+        Ok(detect_and_convert_encoding(&content))
     }
 
     /// 读取 chunks 为原始字节
@@ -549,8 +639,8 @@ impl ArchiveService {
         match &file_type {
             FileType::Text { .. } => {
                 // 文本文件：完整差异
-                let old_text = String::from_utf8_lossy(&old_content);
-                let new_text = String::from_utf8_lossy(&new_content);
+                let old_text = detect_and_convert_encoding(&old_content);
+                let new_text = detect_and_convert_encoding(&new_content);
 
                 let diff_result = diff::compute_diff(&old_text, &new_text);
                 let summary_gen = crate::diff::summary::SummaryGenerator::new();

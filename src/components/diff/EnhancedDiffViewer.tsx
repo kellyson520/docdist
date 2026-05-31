@@ -27,9 +27,18 @@ export function EnhancedDiffViewer() {
     }
   };
 
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="animate-spin w-8 h-8 border-4 border-primary-400 border-t-transparent rounded-full" />
+        <span className="ml-3 dark:text-gray-300">对比分析中...</span>
+      </div>
+    );
+  }
+
   if (!enhancedDiffResult) {
     return (
-      <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-4">
+      <div className="flex flex-col items-center justify-center h-full text-gray-400 dark:text-gray-500 gap-4">
         <FileSearch className="w-20 h-20 opacity-20" />
         <div className="text-center">
           <p className="text-lg font-medium text-gray-500 dark:text-gray-400">暂无差异数据</p>
@@ -39,44 +48,41 @@ export function EnhancedDiffViewer() {
     );
   }
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <div className="animate-spin w-8 h-8 border-4 border-primary-400 border-t-transparent rounded-full" />
-        <span className="ml-3">对比分析中...</span>
-      </div>
-    );
-  }
-
   return (
     <div className="flex flex-col h-full bg-white dark:bg-gray-800 rounded-lg shadow">
       {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b">
+      <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
         <div className="flex items-center gap-3">
           <FileText className="w-5 h-5 text-primary-500" />
-          <h2 className="text-lg font-semibold">差异对比</h2>
+          <h2 className="text-lg font-semibold dark:text-white">差异对比</h2>
           <FileTypeBadge fileType={enhancedDiffResult.file_type} />
         </div>
 
         <div className="flex items-center gap-2">
-          <button onClick={handleCopy} className="btn-secondary">
-            {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+          <button
+            onClick={handleCopy}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition"
+          >
+            {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
             <span>复制摘要</span>
           </button>
-          <button onClick={clearDiff} className="btn-secondary">
+          <button
+            onClick={clearDiff}
+            className="px-3 py-1.5 text-xs text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition"
+          >
             关闭
           </button>
         </div>
       </div>
 
       {/* Tab Navigation */}
-      <div className="flex border-b">
+      <div className="flex border-b border-gray-200 dark:border-gray-700">
         <button
           onClick={() => setActiveTab('diff')}
           className={`px-4 py-2 text-sm font-medium ${
             activeTab === 'diff'
-              ? 'border-b-2 border-primary-500 text-primary-600'
-              : 'text-gray-600 hover:text-gray-800'
+              ? 'border-b-2 border-primary-500 text-primary-600 dark:text-primary-400'
+              : 'text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'
           }`}
         >
           详细差异
@@ -85,8 +91,8 @@ export function EnhancedDiffViewer() {
           onClick={() => setActiveTab('summary')}
           className={`px-4 py-2 text-sm font-medium ${
             activeTab === 'summary'
-              ? 'border-b-2 border-primary-500 text-primary-600'
-              : 'text-gray-600 hover:text-gray-800'
+              ? 'border-b-2 border-primary-500 text-primary-600 dark:text-primary-400'
+              : 'text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'
           }`}
         >
           变更摘要 ({enhancedDiffResult.summary.changes.length})
@@ -95,8 +101,8 @@ export function EnhancedDiffViewer() {
           onClick={() => setActiveTab('regions')}
           className={`px-4 py-2 text-sm font-medium ${
             activeTab === 'regions'
-              ? 'border-b-2 border-primary-500 text-primary-600'
-              : 'text-gray-600 hover:text-gray-800'
+              ? 'border-b-2 border-primary-500 text-primary-600 dark:text-primary-400'
+              : 'text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'
           }`}
         >
           受影响区域 ({enhancedDiffResult.summary.affected_regions.length})
@@ -130,7 +136,7 @@ function FileTypeBadge({ fileType }: { fileType: FileType }) {
   };
 
   return (
-    <span className="inline-flex items-center gap-1 px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded text-xs">
+    <span className="inline-flex items-center gap-1 px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded text-xs text-gray-700 dark:text-gray-300">
       {getLabel()}
     </span>
   );

@@ -25,12 +25,8 @@ export function ArchiveList() {
   const [createPath, setCreatePath] = useState('');
 
   useEffect(() => {
-    fetchArchives();
-  }, [fetchArchives]);
-
-  useEffect(() => {
     const timer = setTimeout(() => {
-      fetchArchives(undefined, searchQuery);
+      fetchArchives(undefined, searchQuery || undefined);
     }, 300);
     return () => clearTimeout(timer);
   }, [searchQuery, fetchArchives]);
@@ -62,7 +58,7 @@ export function ArchiveList() {
         <div className="flex items-center gap-2">
           <FolderOpen className="w-5 h-5 text-primary-500" />
           <h2 className="font-semibold text-lg dark:text-white">存档管理</h2>
-          <span className="text-xs text-gray-400 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded-full">
+          <span className="text-xs text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded-full">
             {archives.length}
           </span>
         </div>
@@ -83,14 +79,14 @@ export function ArchiveList() {
           </span>
           <button
             onClick={selectAll}
-            className="flex items-center gap-1 text-xs text-primary-500 hover:text-primary-600 transition"
+            className="flex items-center gap-1 text-xs text-primary-500 hover:text-primary-600 dark:hover:text-primary-400 transition"
           >
             <CheckSquare className="w-3.5 h-3.5" />
             全选
           </button>
           <button
             onClick={clearSelection}
-            className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-600 transition"
+            className="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition"
           >
             <XSquare className="w-3.5 h-3.5" />
             取消
@@ -98,7 +94,7 @@ export function ArchiveList() {
           <div className="flex-1" />
           <button
             onClick={handleBatchDelete}
-            className="flex items-center gap-1 px-2 py-1 text-xs text-red-600 bg-red-50 dark:bg-red-900/20 rounded-lg hover:bg-red-100 transition"
+            className="flex items-center gap-1 px-2 py-1 text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/30 transition"
           >
             <Trash2 className="w-3.5 h-3.5" />
             批量删除
@@ -120,12 +116,12 @@ export function ArchiveList() {
             ))}
           </div>
         ) : archives.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-64 text-gray-400">
+          <div className="flex flex-col items-center justify-center h-64 text-gray-400 dark:text-gray-500">
             <div className="w-16 h-16 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center mb-4">
               <FolderOpen className="w-8 h-8 opacity-30" />
             </div>
             <p className="text-sm font-medium">暂无存档</p>
-            <p className="text-xs mt-1 text-gray-300">点击「新建存档」开始追踪文件历史</p>
+            <p className="text-xs mt-1 text-gray-300 dark:text-gray-600">点击「新建存档」开始追踪文件历史</p>
           </div>
         ) : (
           archives.map((archive) => (
@@ -159,16 +155,16 @@ export function ArchiveList() {
           <button
             disabled={page <= 1}
             onClick={() => fetchArchivesPaginated(page - 1, undefined, searchQuery)}
-            className="flex items-center gap-1 px-3 py-1.5 text-xs text-gray-500 hover:bg-gray-100 rounded-lg transition disabled:opacity-30"
+            className="flex items-center gap-1 px-3 py-1.5 text-xs text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition disabled:opacity-30"
           >
             <ChevronLeft className="w-3.5 h-3.5" />
             上一页
           </button>
-          <span className="text-xs text-gray-400">第 {page} 页</span>
+          <span className="text-xs text-gray-400 dark:text-gray-500">第 {page} 页</span>
           <button
             disabled={!hasMore}
             onClick={() => fetchArchivesPaginated(page + 1, undefined, searchQuery)}
-            className="flex items-center gap-1 px-3 py-1.5 text-xs text-gray-500 hover:bg-gray-100 rounded-lg transition disabled:opacity-30"
+            className="flex items-center gap-1 px-3 py-1.5 text-xs text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition disabled:opacity-30"
           >
             下一页
             <ChevronRight className="w-3.5 h-3.5" />

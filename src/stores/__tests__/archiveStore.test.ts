@@ -356,10 +356,11 @@ describe('useArchiveStore', () => {
   // ==================== 11. createArchive 成功 ====================
   describe('createArchive', () => {
     it('should create archive and refresh list on success', async () => {
-      // First invoke: create_archive, second invoke: list_archives (via fetchArchives)
+      // First invoke: create_archive, second invoke: list_archives (via fetchArchives), third: get_statistics
       mockInvoke
         .mockResolvedValueOnce(undefined) // create_archive
         .mockResolvedValueOnce([mockArchive1]) // list_archives
+        .mockResolvedValueOnce({ total_archives: 1, unique_files: 1, total_size: 100 }) // get_statistics
 
       await useArchiveStore.getState().createArchive('/path/to/file.pdf', 'my note', ['tag1'])
 
@@ -369,8 +370,8 @@ describe('useArchiveStore', () => {
         tags: ['tag1'],
         parentId: null,
       })
-      // Should have refreshed the list
-      expect(mockInvoke).toHaveBeenCalledTimes(2)
+      // Should have refreshed the list and statistics
+      expect(mockInvoke).toHaveBeenCalledTimes(3)
       expect(mockInvoke).toHaveBeenNthCalledWith(2, 'list_archives', {
         filePath: null,
         search: null,

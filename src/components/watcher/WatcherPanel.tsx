@@ -82,7 +82,7 @@ export function WatcherPanel() {
       </div>
 
       {/* Status indicator */}
-      <div className="px-4 py-2 bg-gray-50 dark:bg-gray-750 border-b border-gray-100 dark:border-gray-700">
+      <div className="px-4 py-2 bg-gray-50 dark:bg-gray-700/50 border-b border-gray-100 dark:border-gray-700">
         <div className="flex items-center gap-2">
           <div
             className={`w-2 h-2 rounded-full ${
@@ -145,7 +145,7 @@ export function WatcherPanel() {
         <div className="border-t border-gray-100 dark:border-gray-700">
           <button
             onClick={() => setShowEvents(!showEvents)}
-            className="w-full px-4 py-2 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-750 transition"
+            className="w-full px-4 py-2 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-700/50 transition"
           >
             <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
               最近事件 ({fileEvents.length})

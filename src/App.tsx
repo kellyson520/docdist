@@ -140,7 +140,7 @@ export default function App() {
           <nav className="flex-1 p-3 space-y-1">
             {navItems.map(({ id, label, icon: Icon, shortcut }) => {
               const isActive = id === 'enhanced-diff'
-                ? (view === 'diff' && showEnhancedDiff)
+                ? (view === 'enhanced-diff' || (view === 'diff' && showEnhancedDiff))
                 : (view === id && (id !== 'diff' || !showEnhancedDiff));
               return (
               <button
@@ -219,12 +219,13 @@ export default function App() {
             {view === 'diff' && (
               showEnhancedDiff ? <EnhancedDiffViewer /> : <DiffViewer />
             )}
+            {view === 'enhanced-diff' && <EnhancedDiffViewer />}
             {view === 'graph' && <IterationGraph />}
           </div>
         </div>
 
         {/* Right sidebar — Watcher Panel */}
-        <div className="w-72 bg-gray-50 dark:bg-gray-850 border-l border-gray-200 dark:border-gray-700 overflow-y-auto p-3 space-y-3 transition-colors">
+        <div className="w-72 bg-gray-50 dark:bg-gray-900 border-l border-gray-200 dark:border-gray-700 overflow-y-auto p-3 space-y-3 transition-colors">
           <WatcherPanel />
         </div>
       </div>
