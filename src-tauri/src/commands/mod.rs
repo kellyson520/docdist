@@ -127,7 +127,7 @@ pub async fn start_watcher(
     app_handle: tauri::AppHandle,
     paths: Vec<String>,
 ) -> Result<(), AppError> {
-    let watcher = state.watcher.lock().unwrap_or_else(|e| e.into_inner());
+    let mut watcher = state.watcher.lock().unwrap_or_else(|e| e.into_inner());
     // 设置自动存档回调：通过 Tauri 事件通知前端
     let handle = app_handle.clone();
     watcher.set_auto_archive_callback(std::sync::Arc::new(
@@ -145,7 +145,7 @@ pub async fn start_watcher(
 
 #[tauri::command]
 pub async fn stop_watcher(state: State<'_, AppState>) -> Result<(), AppError> {
-    let watcher = state.watcher.lock().unwrap_or_else(|e| e.into_inner());
+    let mut watcher = state.watcher.lock().unwrap_or_else(|e| e.into_inner());
     watcher.stop();
     Ok(())
 }
@@ -166,7 +166,7 @@ pub async fn add_watcher_path(
     state: State<'_, AppState>,
     path: String,
 ) -> Result<(), AppError> {
-    let watcher = state.watcher.lock().unwrap_or_else(|e| e.into_inner());
+    let mut watcher = state.watcher.lock().unwrap_or_else(|e| e.into_inner());
     watcher.add_path(path)
 }
 
@@ -175,7 +175,7 @@ pub async fn remove_watcher_path(
     state: State<'_, AppState>,
     path: String,
 ) -> Result<(), AppError> {
-    let watcher = state.watcher.lock().unwrap_or_else(|e| e.into_inner());
+    let mut watcher = state.watcher.lock().unwrap_or_else(|e| e.into_inner());
     watcher.remove_path(&path)
 }
 

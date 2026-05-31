@@ -14,7 +14,7 @@ mod storage;
 
 use config::AppConfig;
 use services::archive_service::ArchiveService;
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
 pub struct AppState {
