@@ -156,10 +156,8 @@ impl FileWatcher {
 
                                 // 排除检查 — 按路径段匹配
                                 let patterns = exclude.lock().unwrap();
-                                let should_skip = is_path_excluded(
-                                    &path_str,
-                                    &patterns,
-                                );
+                                let should_skip =
+                                    is_path_excluded(&path_str, &patterns);
                                 drop(patterns);
 
                                 if should_skip {
@@ -398,7 +396,8 @@ fn is_path_excluded(path_str: &str, patterns: &[String]) -> bool {
             // 目录/文件名匹配：检查路径的每个部分是否完全匹配
             // 例如 pattern ".git" 匹配 "/foo/.git/bar" 和 "/foo/.git"
             for part in std::path::Path::new(path_str).components() {
-                let part_str = part.as_os_str().to_string_lossy().to_lowercase();
+                let part_str =
+                    part.as_os_str().to_string_lossy().to_lowercase();
                 if part_str == pat_lower {
                     return true;
                 }

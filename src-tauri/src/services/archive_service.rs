@@ -232,11 +232,10 @@ impl ArchiveService {
                 "DELETE FROM archive_chunks WHERE archive_id = ?1",
                 rusqlite::params![id],
             )?;
-            let deleted =
-                tx.execute(
-                    "DELETE FROM archives WHERE id = ?1",
-                    rusqlite::params![id],
-                )?;
+            let deleted = tx.execute(
+                "DELETE FROM archives WHERE id = ?1",
+                rusqlite::params![id],
+            )?;
 
             for hash in &chunk_hashes {
                 tx.execute(
@@ -300,10 +299,8 @@ impl ArchiveService {
 
         // 添加存储使用信息
         let storage_usage = storage::get_storage_usage(&self.chunks_dir)?;
-        stats["storage_chunks"] =
-            serde_json::json!(storage_usage.total_chunks);
-        stats["storage_bytes"] =
-            serde_json::json!(storage_usage.total_bytes);
+        stats["storage_chunks"] = serde_json::json!(storage_usage.total_chunks);
+        stats["storage_bytes"] = serde_json::json!(storage_usage.total_bytes);
 
         Ok(stats)
     }
