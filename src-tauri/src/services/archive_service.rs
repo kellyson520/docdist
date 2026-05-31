@@ -530,7 +530,7 @@ impl ArchiveService {
         // 1. 获取两个存档
         let archive1 = db::get_archive(&self.pool, id1)?
             .ok_or_else(|| AppError::Other("存档1不存在".to_string()))?;
-        let archive2 = db::get_archive(&self.pool, id2)?
+        let _archive2 = db::get_archive(&self.pool, id2)?
             .ok_or_else(|| AppError::Other("存档2不存在".to_string()))?;
 
         // 2. 获取 chunks
