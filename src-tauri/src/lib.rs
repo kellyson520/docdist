@@ -11,6 +11,7 @@ mod diff;
 mod error;
 mod services;
 mod storage;
+pub mod types;
 
 use config::AppConfig;
 use services::archive_service::ArchiveService;
