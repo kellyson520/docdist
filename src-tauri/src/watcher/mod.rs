@@ -76,40 +76,7 @@ impl FileWatcher {
         *self.exclude_patterns.lock().unwrap() = patterns;
     }
 
-    /// 设置防抖时间（秒）
-    pub fn set_debounce_secs(&self, secs: u64) {
-        // 注意：debounce_duration 存在 self 中，但 self 是不可变引用时无法修改
-        // 这个方法需要 &mut self，但我们用 Arc<Mutex> 来处理
-        // 实际上 debounce_duration 是固定字段，这里我们用另一个方式
-        // 通过 pending_changes 的时间判断来实现
-    }
-
-    /// 检查路径是否应被排除
-    fn should_exclude(&self, path: &str) -> bool {
-        let patterns = self.exclude_patterns.lock().unwrap();
-        let path_lower = path.to_lowercase();
-        let filename = std::path::Path::new(path)
-            .file_name()
-            .map(|n| n.to_string_lossy().to_lowercase())
-            .unwrap_or_default();
-
-        for pattern in patterns.iter() {
-            let pat = pattern.to_lowercase();
-            // 简单匹配：检查路径是否包含排除模式
-            if pat.starts_with("*.") {
-                // 扩展名匹配
-                let ext = &pat[1..]; // e.g. ".tmp"
-                if filename.ends_with(ext) {
-                    return true;
-                }
-            } else if path_lower.contains(&pat) {
-                return true;
-            }
-        }
-        false
-    }
-
-    /// 向前端发送事件
+    /// 设置自动存档回调
     fn emit_event(&self, event: FileChangeEvent) {
         if let Some(handle) = self.event_sender.lock().unwrap().as_ref() {
             let _ = handle.emit_all("file-changed", &event);
@@ -166,6 +133,12 @@ impl FileWatcher {
         let event_tx = self.event_sender.clone();
         let triggered = self.triggered_paths.clone();
         let debounce = self.debounce_duration;
+
+        // 为 debounce 线程提前 clone
+        let pending_debounce = self.pending_changes.clone();
+        let callback_debounce = self.auto_archive_cb.clone();
+        let event_tx_debounce = self.event_sender.clone();
+        let triggered_debounce = self.triggered_paths.clone();
 
         let mut watcher = notify::recommended_watcher(
             move |res: Result<Event, notify::Error>| {
@@ -250,11 +223,6 @@ impl FileWatcher {
         self.watcher = Some(watcher);
 
         // 启动防抖处理线程
-        let pending_clone = pending.clone();
-        let callback_clone = callback.clone();
-        let event_tx_clone = event_tx.clone();
-        let triggered_clone = triggered.clone();
-
         std::thread::spawn(move || {
             loop {
                 std::thread::sleep(Duration::from_millis(500));
@@ -263,7 +231,7 @@ impl FileWatcher {
                 let mut to_process = Vec::new();
 
                 {
-                    let mut p = pending_clone.lock().unwrap();
+                    let mut p = pending_debounce.lock().unwrap();
                     p.retain(|path, last_modified| {
                         if now.duration_since(*last_modified) >= debounce {
                             to_process.push(path.clone());
@@ -277,7 +245,7 @@ impl FileWatcher {
                 for path in to_process {
                     // 去重检查
                     {
-                        let mut trig = triggered_clone.lock().unwrap();
+                        let mut trig = triggered_debounce.lock().unwrap();
                         if trig.contains_key(&path) {
                             continue;
                         }
@@ -288,7 +256,7 @@ impl FileWatcher {
 
                     // 发送前端通知
                     if let Some(handle) =
-                        event_tx_clone.lock().unwrap().as_ref()
+                        event_tx_debounce.lock().unwrap().as_ref()
                     {
                         let evt = FileChangeEvent {
                             path: path.clone(),
@@ -301,7 +269,8 @@ impl FileWatcher {
                     }
 
                     // 触发自动存档
-                    if let Some(cb) = callback_clone.lock().unwrap().as_ref() {
+                    if let Some(cb) = callback_debounce.lock().unwrap().as_ref()
+                    {
                         cb(path);
                     }
                 }
