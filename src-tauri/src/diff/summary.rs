@@ -1,7 +1,7 @@
 //! 差异摘要生成模块
 
 use super::types::*;
-use super::{DiffChange, DiffHunk, DiffResult};
+use super::{DiffHunk, DiffResult};
 
 pub struct SummaryGenerator {
     max_changes: usize,
@@ -199,6 +199,7 @@ impl SummaryGenerator {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::diff::DiffChange;
     use crate::diff::{DiffResult, DiffStats as DiffResultStats};
 
     fn make_diff_result() -> DiffResult {

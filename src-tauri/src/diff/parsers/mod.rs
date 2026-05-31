@@ -4,6 +4,7 @@ use crate::diff::types::FileType;
 use crate::error::AppError;
 
 /// 文件解析器 trait
+#[allow(dead_code)]
 pub trait FileParser: Send + Sync {
     /// 提取文本内容
     fn extract_text(&self, data: &[u8]) -> Result<String, AppError>;
@@ -18,10 +19,12 @@ pub trait FileParser: Send + Sync {
 }
 
 /// 解析器注册表
+#[allow(dead_code)]
 pub struct ParserRegistry {
     parsers: Vec<Box<dyn FileParser>>,
 }
 
+#[allow(dead_code)]
 impl ParserRegistry {
     pub fn new() -> Self {
         let mut registry = Self {

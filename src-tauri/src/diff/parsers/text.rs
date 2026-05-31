@@ -3,6 +3,7 @@ use crate::error::AppError;
 
 use super::FileParser;
 
+#[allow(dead_code)]
 pub struct TextParser;
 
 impl FileParser for TextParser {

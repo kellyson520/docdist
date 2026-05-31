@@ -625,11 +625,11 @@ fn detect_file_type(path: &str, data: &[u8]) -> FileType {
             encoding: "UTF-8".to_string(),
             line_ending: "\n".to_string(),
         },
-        "pdf" => FileType::PDF {
+        "pdf" => FileType::Pdf {
             page_count: 0,
             has_images: false,
         },
-        "dxf" | "dwg" => FileType::CAD {
+        "dxf" | "dwg" => FileType::Cad {
             format: ext.to_uppercase(),
             layer_count: 0,
             entity_count: 0,

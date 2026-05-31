@@ -18,12 +18,12 @@ impl FileParser for CadParser {
             .unwrap_or("");
 
         match ext {
-            "dxf" => Some(FileType::CAD {
+            "dxf" => Some(FileType::Cad {
                 format: "DXF".to_string(),
                 layer_count: 0,
                 entity_count: 0,
             }),
-            "dwg" => Some(FileType::CAD {
+            "dwg" => Some(FileType::Cad {
                 format: "DWG".to_string(),
                 layer_count: 0,
                 entity_count: 0,
@@ -41,7 +41,10 @@ pub struct CadStructure {
 
 impl CadParser {
     /// 解析 DXF 结构
-    pub fn parse_dxf_structure(&self, content: &str) -> Result<CadStructure, AppError> {
+    pub fn parse_dxf_structure(
+        &self,
+        content: &str,
+    ) -> Result<CadStructure, AppError> {
         let mut layers = Vec::new();
         let mut entity_count = 0;
 

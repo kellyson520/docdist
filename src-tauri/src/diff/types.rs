@@ -104,11 +104,11 @@ pub enum FileType {
         mime_type: String,
         size: u64,
     },
-    PDF {
+    Pdf {
         page_count: u32,
         has_images: bool,
     },
-    CAD {
+    Cad {
         format: String,
         layer_count: u32,
         entity_count: u32,

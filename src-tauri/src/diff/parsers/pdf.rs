@@ -20,7 +20,7 @@ impl FileParser for PdfParser {
             .unwrap_or("");
 
         if ext == "pdf" {
-            Some(FileType::PDF {
+            Some(FileType::Pdf {
                 page_count: 0,
                 has_images: false,
             })
