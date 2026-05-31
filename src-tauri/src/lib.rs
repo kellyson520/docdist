@@ -141,6 +141,7 @@ pub fn run() {
             commands::compare_archives,
             commands::get_timeline,
             commands::get_children,
+            commands::get_archive_tree,
             commands::get_statistics,
             // Watcher 控制
             commands::start_watcher,

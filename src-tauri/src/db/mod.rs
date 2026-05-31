@@ -558,3 +558,812 @@ pub fn get_archive_detail(
         None => Ok(None),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use r2d2::Pool;
+    use r2d2_sqlite::SqliteConnectionManager;
+
+    /// 创建内存数据库池，max_size=1 确保所有请求复用同一个连接
+    fn setup_db() -> DbPool {
+        let manager = SqliteConnectionManager::memory().with_init(|conn| {
+            conn.execute_batch(
+                "PRAGMA journal_mode = WAL;
+                 PRAGMA synchronous = NORMAL;
+                 PRAGMA foreign_keys = ON;
+                 PRAGMA temp_store = MEMORY;",
+            )?;
+            Ok(())
+        });
+        let pool = Pool::builder()
+            .max_size(1)
+            .build(manager)
+            .expect("创建内存连接池失败");
+
+        let conn = pool.get().expect("获取连接失败");
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS archives (
+                id TEXT PRIMARY KEY,
+                file_path TEXT NOT NULL,
+                file_name TEXT NOT NULL,
+                file_size INTEGER NOT NULL,
+                checksum TEXT NOT NULL,
+                chunk_count INTEGER NOT NULL DEFAULT 0,
+                note TEXT DEFAULT '',
+                tags TEXT DEFAULT '[]',
+                parent_id TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            CREATE TABLE IF NOT EXISTS chunks (
+                hash TEXT PRIMARY KEY,
+                size INTEGER NOT NULL,
+                ref_count INTEGER NOT NULL DEFAULT 1,
+                storage_path TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            CREATE TABLE IF NOT EXISTS archive_chunks (
+                archive_id TEXT NOT NULL,
+                chunk_hash TEXT NOT NULL,
+                chunk_index INTEGER NOT NULL,
+                PRIMARY KEY (archive_id, chunk_index)
+            );
+            CREATE INDEX IF NOT EXISTS idx_archives_path
+                ON archives(file_path);
+            CREATE INDEX IF NOT EXISTS idx_archives_parent
+                ON archives(parent_id);
+            CREATE INDEX IF NOT EXISTS idx_archives_created
+                ON archives(created_at DESC);",
+        )
+        .expect("建表失败");
+
+        pool
+    }
+
+    /// 构造一个测试用 Archive
+    fn make_archive(id: &str, file_path: &str, file_name: &str) -> Archive {
+        Archive {
+            id: id.to_string(),
+            file_path: file_path.to_string(),
+            file_name: file_name.to_string(),
+            file_size: 1024,
+            checksum: format!("checksum_{}", id),
+            chunk_count: 3,
+            note: String::new(),
+            tags: vec![],
+            parent_id: None,
+            created_at: "2025-01-01 00:00:00".to_string(),
+        }
+    }
+
+    // ============================================================
+    // 1. init_database 创建表结构 — 内存DB
+    // ============================================================
+    #[test]
+    fn test_init_database_creates_tables() {
+        let pool = setup_db();
+        let conn = pool.get().unwrap();
+
+        // 验证 archives 表存在
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM archives", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 0);
+
+        // 验证 chunks 表存在
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM chunks", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 0);
+
+        // 验证 archive_chunks 表存在
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM archive_chunks", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 0);
+
+        // 验证 foreign_keys 已开启
+        let fk: i64 = conn
+            .query_row("PRAGMA foreign_keys", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(fk, 1);
+    }
+
+    // ============================================================
+    // 2. insert_archive + get_archive 正确读写
+    // ============================================================
+    #[test]
+    fn test_insert_and_get_archive() {
+        let pool = setup_db();
+        let archive = make_archive("a1", "/docs/file.pdf", "file.pdf");
+
+        insert_archive(&pool, &archive).unwrap();
+
+        let result = get_archive(&pool, "a1").unwrap();
+        assert!(result.is_some());
+        let got = result.unwrap();
+        assert_eq!(got.id, "a1");
+        assert_eq!(got.file_path, "/docs/file.pdf");
+        assert_eq!(got.file_name, "file.pdf");
+        assert_eq!(got.file_size, 1024);
+        assert_eq!(got.checksum, "checksum_a1");
+        assert_eq!(got.chunk_count, 3);
+    }
+
+    #[test]
+    fn test_get_archive_not_found() {
+        let pool = setup_db();
+        let result = get_archive(&pool, "nonexistent").unwrap();
+        assert!(result.is_none());
+    }
+
+    // ============================================================
+    // 3. insert_archive 重复 id 报错
+    // ============================================================
+    #[test]
+    fn test_insert_archive_duplicate_id_error() {
+        let pool = setup_db();
+        let archive = make_archive("dup1", "/docs/file.pdf", "file.pdf");
+
+        insert_archive(&pool, &archive).unwrap();
+        let err = insert_archive(&pool, &archive).unwrap_err();
+        let msg = format!("{}", err);
+        assert!(
+            msg.contains("数据库错误"),
+            "期望中文数据库错误，实际: {}",
+            msg
+        );
+    }
+
+    // ============================================================
+    // 4. insert_archive_chunks + get_archive_chunks 正确关联
+    // ============================================================
+    #[test]
+    fn test_insert_and_get_archive_chunks() {
+        let pool = setup_db();
+        let archive = make_archive("a2", "/docs/data.csv", "data.csv");
+        insert_archive(&pool, &archive).unwrap();
+
+        let chunks = vec![
+            ("hash_00aa".to_string(), 512usize),
+            ("hash_01bb".to_string(), 512),
+            ("hash_02cc".to_string(), 256),
+        ];
+        insert_archive_chunks(&pool, "a2", &chunks).unwrap();
+
+        let result = get_archive_chunks(&pool, "a2").unwrap();
+        assert_eq!(result.len(), 3);
+        assert_eq!(result[0], "hash_00aa");
+        assert_eq!(result[1], "hash_01bb");
+        assert_eq!(result[2], "hash_02cc");
+    }
+
+    #[test]
+    fn test_get_archive_chunks_empty() {
+        let pool = setup_db();
+        let result = get_archive_chunks(&pool, "nonexistent").unwrap();
+        assert!(result.is_empty());
+    }
+
+    // ============================================================
+    // 5. get_archives 无过滤返回全部
+    // ============================================================
+    #[test]
+    fn test_get_archives_no_filter_returns_all() {
+        let pool = setup_db();
+        for i in 0..5 {
+            let a = make_archive(
+                &format!("all_{}", i),
+                &format!("/docs/f{}.pdf", i),
+                &format!("f{}.pdf", i),
+            );
+            insert_archive(&pool, &a).unwrap();
+        }
+
+        let archives = get_archives(&pool, None, None).unwrap();
+        assert_eq!(archives.len(), 5);
+    }
+
+    // ============================================================
+    // 6. get_archives file_path 过滤
+    // ============================================================
+    #[test]
+    fn test_get_archives_file_path_filter() {
+        let pool = setup_db();
+        insert_archive(&pool, &make_archive("fp1", "/path/a.txt", "a.txt"))
+            .unwrap();
+        insert_archive(&pool, &make_archive("fp2", "/path/b.txt", "b.txt"))
+            .unwrap();
+        insert_archive(&pool, &make_archive("fp3", "/other/c.txt", "c.txt"))
+            .unwrap();
+
+        let archives = get_archives(&pool, Some("/path/a.txt"), None).unwrap();
+        assert_eq!(archives.len(), 1);
+        assert_eq!(archives[0].id, "fp1");
+    }
+
+    #[test]
+    fn test_get_archives_empty_path_ignored() {
+        let pool = setup_db();
+        insert_archive(&pool, &make_archive("ep1", "/docs/x.txt", "x.txt"))
+            .unwrap();
+
+        let archives = get_archives(&pool, Some(""), None).unwrap();
+        assert_eq!(archives.len(), 1);
+    }
+
+    // ============================================================
+    // 7. get_archives search 关键词搜索（file_name + note）
+    // ============================================================
+    #[test]
+    fn test_get_archives_search_by_file_name() {
+        let pool = setup_db();
+        let mut a1 = make_archive("s1", "/docs/report.pdf", "report.pdf");
+        a1.note = "月度报告".to_string();
+        insert_archive(&pool, &a1).unwrap();
+
+        let mut a2 = make_archive("s2", "/docs/data.csv", "data.csv");
+        a2.note = "原始数据".to_string();
+        insert_archive(&pool, &a2).unwrap();
+
+        let results = get_archives(&pool, None, Some("report")).unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].id, "s1");
+    }
+
+    #[test]
+    fn test_get_archives_search_by_note() {
+        let pool = setup_db();
+        let mut a1 = make_archive("sn1", "/docs/a.pdf", "a.pdf");
+        a1.note = "重要文件".to_string();
+        insert_archive(&pool, &a1).unwrap();
+
+        let mut a2 = make_archive("sn2", "/docs/b.pdf", "b.pdf");
+        a2.note = "普通文件".to_string();
+        insert_archive(&pool, &a2).unwrap();
+
+        let results = get_archives(&pool, None, Some("重要")).unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].id, "sn1");
+    }
+
+    // ============================================================
+    // 8. update_archive 更新 note 和 tags
+    // ============================================================
+    #[test]
+    fn test_update_archive_note_and_tags() {
+        let pool = setup_db();
+        let archive = make_archive("u1", "/docs/file.pdf", "file.pdf");
+        insert_archive(&pool, &archive).unwrap();
+
+        let new_tags = vec!["工作".to_string(), "重要".to_string()];
+        update_archive(&pool, "u1", "已审核", &new_tags).unwrap();
+
+        let got = get_archive(&pool, "u1").unwrap().unwrap();
+        assert_eq!(got.note, "已审核");
+        assert_eq!(got.tags, vec!["工作", "重要"]);
+    }
+
+    #[test]
+    fn test_update_archive_nonexistent() {
+        let pool = setup_db();
+        // 更新不存在的记录不会报错，只是 0 行受影响
+        update_archive(&pool, "ghost", "note", &[]).unwrap();
+    }
+
+    // ============================================================
+    // 9. delete_archive 级联删除 archive_chunks
+    // ============================================================
+    #[test]
+    fn test_delete_archive_cascades_chunks() {
+        let pool = setup_db();
+        let archive = make_archive("d1", "/docs/file.pdf", "file.pdf");
+        insert_archive(&pool, &archive).unwrap();
+
+        let chunks = vec![
+            ("dc_hash0".to_string(), 256usize),
+            ("dc_hash1".to_string(), 256),
+        ];
+        insert_archive_chunks(&pool, "d1", &chunks).unwrap();
+
+        // 确认 chunks 存在
+        assert_eq!(get_archive_chunks(&pool, "d1").unwrap().len(), 2);
+
+        delete_archive(&pool, "d1").unwrap();
+
+        // archive 已删除
+        assert!(get_archive(&pool, "d1").unwrap().is_none());
+        // archive_chunks 已删除
+        assert!(get_archive_chunks(&pool, "d1").unwrap().is_empty());
+    }
+
+    // ============================================================
+    // 10. get_archives_paginated 分页正确
+    // ============================================================
+    #[test]
+    fn test_get_archives_paginated() {
+        let pool = setup_db();
+        // 插入 10 条不同 created_at 的记录
+        for i in 0..10 {
+            let mut a = make_archive(
+                &format!("pg_{}", i),
+                "/docs/paginated.pdf",
+                "paginated.pdf",
+            );
+            a.created_at = format!("2025-01-{:02} 00:00:00", i + 1);
+            insert_archive(&pool, &a).unwrap();
+        }
+
+        // 第1页，每页3条
+        let (page1, total) =
+            get_archives_paginated(&pool, None, None, 1, 3).unwrap();
+        assert_eq!(total, 10);
+        assert_eq!(page1.len(), 3);
+        // created_at DESC → 最新的在前
+        assert_eq!(page1[0].created_at, "2025-01-10 00:00:00");
+
+        // 第2页
+        let (page2, total2) =
+            get_archives_paginated(&pool, None, None, 2, 3).unwrap();
+        assert_eq!(total2, 10);
+        assert_eq!(page2.len(), 3);
+        assert_eq!(page2[0].created_at, "2025-01-07 00:00:00");
+
+        // 第4页只有1条
+        let (page4, total4) =
+            get_archives_paginated(&pool, None, None, 4, 3).unwrap();
+        assert_eq!(total4, 10);
+        assert_eq!(page4.len(), 1);
+    }
+
+    #[test]
+    fn test_get_archives_paginated_empty() {
+        let pool = setup_db();
+        let (results, total) =
+            get_archives_paginated(&pool, None, None, 1, 10).unwrap();
+        assert!(results.is_empty());
+        assert_eq!(total, 0);
+    }
+
+    // ============================================================
+    // 11. get_timeline 按 created_at DESC 排序
+    // ============================================================
+    #[test]
+    fn test_get_timeline_ordered_desc() {
+        let pool = setup_db();
+        let path = "/docs/timeline_doc.pdf";
+
+        let mut a1 = make_archive("tl1", path, "timeline_doc.pdf");
+        a1.created_at = "2025-01-01 10:00:00".to_string();
+        insert_archive(&pool, &a1).unwrap();
+
+        let mut a2 = make_archive("tl2", path, "timeline_doc.pdf");
+        a2.created_at = "2025-06-15 12:00:00".to_string();
+        insert_archive(&pool, &a2).unwrap();
+
+        let mut a3 = make_archive("tl3", path, "timeline_doc.pdf");
+        a3.created_at = "2025-03-20 08:00:00".to_string();
+        insert_archive(&pool, &a3).unwrap();
+
+        let timeline = get_timeline(&pool, path).unwrap();
+        assert_eq!(timeline.len(), 3);
+        assert_eq!(timeline[0].id, "tl2"); // 2025-06-15 最新
+        assert_eq!(timeline[1].id, "tl3"); // 2025-03-20
+        assert_eq!(timeline[2].id, "tl1"); // 2025-01-01 最早
+    }
+
+    // ============================================================
+    // 12. get_children 按 parent_id 查询
+    // ============================================================
+    #[test]
+    fn test_get_children_by_parent_id() {
+        let pool = setup_db();
+        let mut parent =
+            make_archive("parent1", "/docs/parent.pdf", "parent.pdf");
+        parent.created_at = "2025-01-01 00:00:00".to_string();
+        insert_archive(&pool, &parent).unwrap();
+
+        let mut child1 =
+            make_archive("child1", "/docs/child1.pdf", "child1.pdf");
+        child1.parent_id = Some("parent1".to_string());
+        child1.created_at = "2025-01-02 00:00:00".to_string();
+        insert_archive(&pool, &child1).unwrap();
+
+        let mut child2 =
+            make_archive("child2", "/docs/child2.pdf", "child2.pdf");
+        child2.parent_id = Some("parent1".to_string());
+        child2.created_at = "2025-01-03 00:00:00".to_string();
+        insert_archive(&pool, &child2).unwrap();
+
+        // 不相关记录
+        let mut other = make_archive("other1", "/docs/other.pdf", "other.pdf");
+        other.parent_id = Some("someone_else".to_string());
+        insert_archive(&pool, &other).unwrap();
+
+        let children = get_children(&pool, "parent1").unwrap();
+        assert_eq!(children.len(), 2);
+        // get_children 按 created_at ASC 排序
+        assert_eq!(children[0].id, "child1");
+        assert_eq!(children[1].id, "child2");
+    }
+
+    #[test]
+    fn test_get_children_empty() {
+        let pool = setup_db();
+        let children = get_children(&pool, "no_parent").unwrap();
+        assert!(children.is_empty());
+    }
+
+    // ============================================================
+    // 13. get_statistics 统计值正确
+    // ============================================================
+    #[test]
+    fn test_get_statistics() {
+        let pool = setup_db();
+
+        let mut a1 = make_archive("stat1", "/docs/a.pdf", "a.pdf");
+        a1.file_size = 1000;
+        a1.parent_id = None;
+        insert_archive(&pool, &a1).unwrap();
+
+        let mut a2 = make_archive("stat2", "/docs/b.pdf", "b.pdf");
+        a2.file_size = 2000;
+        insert_archive(&pool, &a2).unwrap();
+
+        // 同 file_path 的另一条记录
+        let mut a3 = make_archive("stat3", "/docs/a.pdf", "a.pdf");
+        a3.file_size = 500;
+        insert_archive(&pool, &a3).unwrap();
+
+        // 添加 archive_chunks
+        insert_archive_chunks(&pool, "stat1", &[("sc_h1".to_string(), 512)])
+            .unwrap();
+        insert_archive_chunks(
+            &pool,
+            "stat2",
+            &[("sc_h2".to_string(), 512), ("sc_h3".to_string(), 256)],
+        )
+        .unwrap();
+
+        let stats = get_statistics(&pool).unwrap();
+        assert_eq!(stats["total_archives"], 3);
+        assert_eq!(stats["total_size"], 3500); // 1000+2000+500
+        assert_eq!(stats["unique_files"], 2); // /docs/a.pdf, /docs/b.pdf
+        assert_eq!(stats["total_chunks"], 3);
+    }
+
+    #[test]
+    fn test_get_statistics_empty() {
+        let pool = setup_db();
+        let stats = get_statistics(&pool).unwrap();
+        assert_eq!(stats["total_archives"], 0);
+        assert_eq!(stats["total_size"], 0);
+        assert_eq!(stats["unique_files"], 0);
+        assert_eq!(stats["total_chunks"], 0);
+    }
+
+    // ============================================================
+    // 14. upsert_chunk ref_count 管理
+    // ============================================================
+    #[test]
+    fn test_upsert_chunk_new() {
+        let pool = setup_db();
+        upsert_chunk(&pool, "abcdef1234567890", 1024).unwrap();
+
+        let conn = pool.get().unwrap();
+        let (ref_count, size): (i64, i64) = conn
+            .query_row(
+                "SELECT ref_count, size FROM chunks WHERE hash = ?1",
+                params!["abcdef1234567890"],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(ref_count, 1);
+        assert_eq!(size, 1024);
+    }
+
+    #[test]
+    fn test_upsert_chunk_increments_ref_count() {
+        let pool = setup_db();
+        upsert_chunk(&pool, "abcdef1234567890", 1024).unwrap();
+        upsert_chunk(&pool, "abcdef1234567890", 1024).unwrap();
+        upsert_chunk(&pool, "abcdef1234567890", 1024).unwrap();
+
+        let conn = pool.get().unwrap();
+        let ref_count: i64 = conn
+            .query_row(
+                "SELECT ref_count FROM chunks WHERE hash = ?1",
+                params!["abcdef1234567890"],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(ref_count, 3);
+    }
+
+    #[test]
+    fn test_upsert_chunk_short_hash_error() {
+        let pool = setup_db();
+        let err = upsert_chunk(&pool, "a", 100).unwrap_err();
+        let msg = format!("{}", err);
+        assert!(
+            msg.contains("chunk hash too short"),
+            "期望 hash too short 错误，实际: {}",
+            msg
+        );
+    }
+
+    #[test]
+    fn test_upsert_chunk_storage_path() {
+        let pool = setup_db();
+        let hash = "ab12cd34ef567890";
+        upsert_chunk(&pool, hash, 512).unwrap();
+
+        let conn = pool.get().unwrap();
+        let storage_path: String = conn
+            .query_row(
+                "SELECT storage_path FROM chunks WHERE hash = ?1",
+                params![hash],
+                |r| r.get(0),
+            )
+            .unwrap();
+        // storage_path 格式: 前两位/hash
+        assert_eq!(storage_path, "ab/ab12cd34ef567890");
+    }
+
+    // ============================================================
+    // 15. decrement_chunk_ref 正确递减
+    // ============================================================
+    #[test]
+    fn test_decrement_chunk_ref() {
+        let pool = setup_db();
+        upsert_chunk(&pool, "abcdef1234567890", 1024).unwrap();
+        upsert_chunk(&pool, "abcdef1234567890", 1024).unwrap();
+        upsert_chunk(&pool, "abcdef1234567890", 1024).unwrap();
+        // ref_count = 3
+
+        decrement_chunk_ref(&pool, "abcdef1234567890").unwrap();
+
+        let conn = pool.get().unwrap();
+        let ref_count: i64 = conn
+            .query_row(
+                "SELECT ref_count FROM chunks WHERE hash = ?1",
+                params!["abcdef1234567890"],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(ref_count, 2);
+    }
+
+    #[test]
+    fn test_decrement_chunk_ref_clamps_at_zero() {
+        let pool = setup_db();
+        upsert_chunk(&pool, "abcdef1234567890", 1024).unwrap();
+        // ref_count = 1
+
+        decrement_chunk_ref(&pool, "abcdef1234567890").unwrap();
+        decrement_chunk_ref(&pool, "abcdef1234567890").unwrap(); // 再减一次
+
+        let conn = pool.get().unwrap();
+        let ref_count: i64 = conn
+            .query_row(
+                "SELECT ref_count FROM chunks WHERE hash = ?1",
+                params!["abcdef1234567890"],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(ref_count, 0, "ref_count 应该被 MAX(0, ...) 钳制为 0");
+    }
+
+    #[test]
+    fn test_decrement_chunk_ref_nonexistent() {
+        let pool = setup_db();
+        // 不存在的 hash 不会报错，只是 0 行受影响
+        decrement_chunk_ref(&pool, "nonexistent123456").unwrap();
+    }
+
+    // ============================================================
+    // 16. tags JSON 序列化/反序列化往返
+    // ============================================================
+    #[test]
+    fn test_tags_json_roundtrip() {
+        let pool = setup_db();
+        let mut archive = make_archive("tag1", "/docs/tag.pdf", "tag.pdf");
+        archive.tags = vec![
+            "标签A".to_string(),
+            "标签B".to_string(),
+            "special:chars/here".to_string(),
+        ];
+        insert_archive(&pool, &archive).unwrap();
+
+        let got = get_archive(&pool, "tag1").unwrap().unwrap();
+        assert_eq!(got.tags.len(), 3);
+        assert_eq!(got.tags[0], "标签A");
+        assert_eq!(got.tags[1], "标签B");
+        assert_eq!(got.tags[2], "special:chars/here");
+    }
+
+    #[test]
+    fn test_tags_json_empty_vec() {
+        let pool = setup_db();
+        let archive = make_archive("tag_e", "/docs/e.pdf", "e.pdf");
+        insert_archive(&pool, &archive).unwrap();
+
+        let got = get_archive(&pool, "tag_e").unwrap().unwrap();
+        assert!(got.tags.is_empty());
+    }
+
+    #[test]
+    fn test_tags_json_after_update() {
+        let pool = setup_db();
+        let archive = make_archive("tag_u", "/docs/u.pdf", "u.pdf");
+        insert_archive(&pool, &archive).unwrap();
+
+        let tags = vec!["新标签1".to_string(), "新标签2".to_string()];
+        update_archive(&pool, "tag_u", "更新后的备注", &tags).unwrap();
+
+        let got = get_archive(&pool, "tag_u").unwrap().unwrap();
+        assert_eq!(got.tags, vec!["新标签1", "新标签2"]);
+        assert_eq!(got.note, "更新后的备注");
+    }
+
+    // ============================================================
+    // 额外覆盖: delete_archive_record, delete_archive_chunks,
+    // get_archive_detail, get_all_chunk_hashes, get_unreferenced_chunks,
+    // delete_archives_batch, get_storage_stats
+    // ============================================================
+    #[test]
+    fn test_delete_archive_chunks() {
+        let pool = setup_db();
+        let archive = make_archive("dac1", "/docs/x.pdf", "x.pdf");
+        insert_archive(&pool, &archive).unwrap();
+        insert_archive_chunks(
+            &pool,
+            "dac1",
+            &[("h0".to_string(), 64), ("h1".to_string(), 64)],
+        )
+        .unwrap();
+
+        delete_archive_chunks(&pool, "dac1").unwrap();
+        assert!(get_archive_chunks(&pool, "dac1").unwrap().is_empty());
+        // archive 本身还在
+        assert!(get_archive(&pool, "dac1").unwrap().is_some());
+    }
+
+    #[test]
+    fn test_delete_archive_record() {
+        let pool = setup_db();
+        let archive = make_archive("dar1", "/docs/y.pdf", "y.pdf");
+        insert_archive(&pool, &archive).unwrap();
+
+        delete_archive_record(&pool, "dar1").unwrap();
+        assert!(get_archive(&pool, "dar1").unwrap().is_none());
+    }
+
+    #[test]
+    fn test_get_archive_detail() {
+        let pool = setup_db();
+        let archive = make_archive("det1", "/docs/z.pdf", "z.pdf");
+        insert_archive(&pool, &archive).unwrap();
+        insert_archive_chunks(
+            &pool,
+            "det1",
+            &[("dh0".to_string(), 128), ("dh1".to_string(), 256)],
+        )
+        .unwrap();
+
+        let detail = get_archive_detail(&pool, "det1").unwrap();
+        assert!(detail.is_some());
+        let (a, chunks) = detail.unwrap();
+        assert_eq!(a.id, "det1");
+        assert_eq!(chunks.len(), 2);
+        assert_eq!(chunks[0], "dh0");
+        assert_eq!(chunks[1], "dh1");
+    }
+
+    #[test]
+    fn test_get_archive_detail_not_found() {
+        let pool = setup_db();
+        let detail = get_archive_detail(&pool, "nope").unwrap();
+        assert!(detail.is_none());
+    }
+
+    #[test]
+    fn test_get_all_chunk_hashes() {
+        let pool = setup_db();
+        let a1 = make_archive("gach1", "/docs/q.pdf", "q.pdf");
+        insert_archive(&pool, &a1).unwrap();
+        insert_archive_chunks(
+            &pool,
+            "gach1",
+            &[("ha0".to_string(), 64), ("ha1".to_string(), 64)],
+        )
+        .unwrap();
+
+        let a2 = make_archive("gach2", "/docs/r.pdf", "r.pdf");
+        insert_archive(&pool, &a2).unwrap();
+        // 共享 ha1
+        insert_archive_chunks(
+            &pool,
+            "gach2",
+            &[("ha1".to_string(), 64), ("ha2".to_string(), 64)],
+        )
+        .unwrap();
+
+        let hashes = get_all_chunk_hashes(&pool).unwrap();
+        assert_eq!(hashes.len(), 3); // ha0, ha1, ha2 (DISTINCT)
+    }
+
+    #[test]
+    fn test_get_unreferenced_chunks() {
+        let pool = setup_db();
+        // ref_count = 1 → upsert once
+        upsert_chunk(&pool, "unref_abcd12345678", 100).unwrap();
+        // ref_count 减到 0
+        decrement_chunk_ref(&pool, "unref_abcd12345678").unwrap();
+
+        let unreferenced = get_unreferenced_chunks(&pool).unwrap();
+        assert_eq!(unreferenced.len(), 1);
+        assert_eq!(unreferenced[0], "unref_abcd12345678");
+    }
+
+    #[test]
+    fn test_delete_archives_batch() {
+        let pool = setup_db();
+        for i in 0..3 {
+            let a = make_archive(
+                &format!("batch_{}", i),
+                "/docs/batch.pdf",
+                "batch.pdf",
+            );
+            insert_archive(&pool, &a).unwrap();
+            insert_archive_chunks(
+                &pool,
+                &format!("batch_{}", i),
+                &[("bh0".to_string(), 64)],
+            )
+            .unwrap();
+        }
+
+        let ids = vec![
+            "batch_0".to_string(),
+            "batch_1".to_string(),
+            "batch_2".to_string(),
+        ];
+        let deleted = delete_archives_batch(&pool, &ids).unwrap();
+        assert_eq!(deleted, 3);
+
+        // 所有 chunks 也应被删除
+        for id in &ids {
+            assert!(get_archive_chunks(&pool, id).unwrap().is_empty());
+            assert!(get_archive(&pool, id).unwrap().is_none());
+        }
+    }
+
+    #[test]
+    fn test_get_storage_stats() {
+        let pool = setup_db();
+        upsert_chunk(&pool, "ss_aabbccddee112233", 500).unwrap();
+        upsert_chunk(&pool, "ss_aabbccddee112233", 500).unwrap(); // ref_count=2
+        upsert_chunk(&pool, "ss_1122334455667788", 300).unwrap();
+
+        let stats = get_storage_stats(&pool).unwrap();
+        assert_eq!(stats["total_chunks"], 2);
+        assert_eq!(stats["total_chunk_size"], 800); // 500+300
+                                                    // avg_refs = (2+1)/2 = 1.5
+        let avg = stats["avg_refs"].as_f64().unwrap();
+        assert!(
+            (avg - 1.5).abs() < 0.01,
+            "avg_refs 应约为 1.5，实际: {}",
+            avg
+        );
+    }
+
+    #[test]
+    fn test_get_storage_stats_empty() {
+        let pool = setup_db();
+        let stats = get_storage_stats(&pool).unwrap();
+        assert_eq!(stats["total_chunks"], 0);
+        assert_eq!(stats["total_chunk_size"], 0);
+        assert_eq!(stats["avg_refs"], 0.0);
+    }
+}

@@ -182,3 +182,399 @@ pub struct StorageUsage {
     pub total_chunks: u64,
     pub total_bytes: u64,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    // ========== compute_hash 测试 ==========
+
+    #[test]
+    fn test_compute_hash_deterministic() {
+        let data = b"hello world";
+        let hash1 = compute_hash(data);
+        let hash2 = compute_hash(data);
+        assert_eq!(hash1, hash2, "相同输入应产生相同 hash");
+    }
+
+    #[test]
+    fn test_compute_hash_output_length() {
+        let data = b"any data for testing";
+        let hash = compute_hash(data);
+        assert_eq!(
+            hash.len(),
+            16,
+            "hash 输出应为 16 个 hex 字符，实际长度: {}",
+            hash.len()
+        );
+        // 额外验证全部为 hex 字符
+        assert!(
+            hash.chars().all(|c| c.is_ascii_hexdigit()),
+            "hash 应仅包含 hex 字符: {}",
+            hash
+        );
+    }
+
+    // ========== store_file 测试 ==========
+
+    #[test]
+    fn test_store_file_small_single_chunk() {
+        let dir = tempdir().unwrap();
+        let base_dir = dir.path().join("chunks");
+        let file_path = dir.path().join("small.txt");
+
+        // 写入一个小文件（< chunk_size）
+        std::fs::write(&file_path, b"small content").unwrap();
+
+        let (chunk_hashes, chunk_sizes, file_size, checksum) =
+            store_file(&base_dir, &file_path, 4096).unwrap();
+
+        assert_eq!(chunk_hashes.len(), 1, "小文件应只有 1 个 chunk");
+        assert_eq!(chunk_sizes.len(), 1);
+        assert_eq!(file_size, 12, "文件大小应为 12 字节");
+        assert!(!checksum.is_empty());
+        // 验证 chunk 文件实际存在
+        let prefix = hash_prefix(&chunk_hashes[0]).unwrap();
+        let chunk_path = base_dir.join(prefix).join(&chunk_hashes[0]);
+        assert!(chunk_path.exists(), "chunk 文件应已写入磁盘");
+    }
+
+    #[test]
+    fn test_store_file_large_multiple_chunks() {
+        let dir = tempdir().unwrap();
+        let base_dir = dir.path().join("chunks");
+        let file_path = dir.path().join("large.bin");
+
+        // 写入一个 10000 字节的文件，chunk_size=4096 → ceil(10000/4096) = 3
+        let content: Vec<u8> = (0..10000).map(|i| (i % 256) as u8).collect();
+        std::fs::write(&file_path, &content).unwrap();
+
+        let (chunk_hashes, chunk_sizes, file_size, _checksum) =
+            store_file(&base_dir, &file_path, 4096).unwrap();
+
+        let expected_chunks = (10000 + 4096 - 1) / 4096; // ceil(10000/4096) = 3
+        assert_eq!(
+            chunk_hashes.len(),
+            expected_chunks,
+            "10000 字节文件分 4096 chunk 应有 {} 个",
+            expected_chunks
+        );
+        assert_eq!(chunk_sizes.len(), expected_chunks);
+        assert_eq!(file_size, 10000);
+
+        // 验证 chunk 大小之和等于文件大小
+        let total_chunk_size: usize = chunk_sizes.iter().sum();
+        assert_eq!(
+            total_chunk_size, 10000,
+            "所有 chunk 大小之和应等于文件大小"
+        );
+
+        // 验证最后一个 chunk 大小 < chunk_size
+        assert!(
+            *chunk_sizes.last().unwrap() <= 4096,
+            "最后一个 chunk 不应超过 chunk_size"
+        );
+    }
+
+    #[test]
+    fn test_store_file_dedup() {
+        let dir = tempdir().unwrap();
+        let base_dir = dir.path().join("chunks");
+        let file1 = dir.path().join("file1.txt");
+        let file2 = dir.path().join("file2.txt");
+
+        // 两个文件内容完全相同
+        let content = b"identical content for dedup test";
+        std::fs::write(&file1, content).unwrap();
+        std::fs::write(&file2, content).unwrap();
+
+        let (hashes1, _, _, _) = store_file(&base_dir, &file1, 4096).unwrap();
+        let (hashes2, _, _, _) = store_file(&base_dir, &file2, 4096).unwrap();
+
+        assert_eq!(hashes1, hashes2, "相同内容应产生相同 chunk hash");
+
+        // 验证磁盘上只有一份 chunk 文件
+        let prefix = hash_prefix(&hashes1[0]).unwrap();
+        let chunk_path = base_dir.join(prefix).join(&hashes1[0]);
+        assert!(chunk_path.exists());
+
+        // 统计 chunks 子目录中的文件数量，应只有 1 个
+        let chunk_dir = base_dir.join(prefix);
+        let file_count: usize = std::fs::read_dir(&chunk_dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_type().map(|ft| ft.is_file()).unwrap_or(false))
+            .count();
+        assert_eq!(file_count, 1, "去重后磁盘上应只有 1 个 chunk 文件");
+    }
+
+    // ========== restore_file 测试 ==========
+
+    #[test]
+    fn test_restore_file_correct_content() {
+        let dir = tempdir().unwrap();
+        let base_dir = dir.path().join("chunks");
+        let file_path = dir.path().join("original.txt");
+        let restore_path = dir.path().join("restored.txt");
+
+        let content = b"Hello, DocDist! This is a test file for restore.";
+        std::fs::write(&file_path, content).unwrap();
+
+        let (chunk_hashes, _, _, _) =
+            store_file(&base_dir, &file_path, 4096).unwrap();
+
+        restore_file(&base_dir, &chunk_hashes, &restore_path).unwrap();
+
+        let restored = std::fs::read(&restore_path).unwrap();
+        assert_eq!(
+            content.to_vec(),
+            restored,
+            "恢复的文件内容应与原始文件完全一致"
+        );
+    }
+
+    #[test]
+    fn test_restore_file_missing_chunk_error() {
+        let dir = tempdir().unwrap();
+        let base_dir = dir.path().join("chunks");
+        let restore_path = dir.path().join("restored.txt");
+
+        // 使用一个不存在的 hash
+        let fake_hashes = vec!["0000000000000000".to_string()];
+
+        let result = restore_file(&base_dir, &fake_hashes, &restore_path);
+        assert!(result.is_restore_err(), "缺失 chunk 应返回错误");
+    }
+
+    // ========== cleanup_orphan_chunks 测试 ==========
+
+    #[test]
+    fn test_cleanup_orphan_chunks_removes_inactive() {
+        let dir = tempdir().unwrap();
+        let base_dir = dir.path().join("chunks");
+
+        // 手动创建一些 chunk 文件
+        let prefix = "ab";
+        let active_hash = format!("ab{}", "1".repeat(14)); // "ab11111111111111"
+        let orphan_hash = format!("ab{}", "2".repeat(14)); // "ab22222222222222"
+
+        let chunk_dir = base_dir.join(prefix);
+        std::fs::create_dir_all(&chunk_dir).unwrap();
+        std::fs::write(chunk_dir.join(&active_hash), b"active data").unwrap();
+        std::fs::write(chunk_dir.join(&orphan_hash), b"orphan data").unwrap();
+
+        let active_hashes = vec![active_hash];
+        let stats = cleanup_orphan_chunks(&base_dir, &active_hashes).unwrap();
+
+        assert_eq!(stats.removed_count, 1, "应删除 1 个孤儿 chunk");
+        assert_eq!(stats.kept_count, 1, "应保留 1 个活跃 chunk");
+        assert!(stats.removed_bytes > 0, "删除的字节数应大于 0");
+    }
+
+    #[test]
+    fn test_cleanup_orphan_chunks_keeps_active() {
+        let dir = tempdir().unwrap();
+        let base_dir = dir.path().join("chunks");
+
+        let prefix = "cd";
+        let hash1 = format!("cd{}", "a".repeat(14));
+        let hash2 = format!("cd{}", "b".repeat(14));
+
+        let chunk_dir = base_dir.join(prefix);
+        std::fs::create_dir_all(&chunk_dir).unwrap();
+        std::fs::write(chunk_dir.join(&hash1), b"data1").unwrap();
+        std::fs::write(chunk_dir.join(&hash2), b"data2").unwrap();
+
+        // 两个都是活跃的
+        let active_hashes = vec![hash1.clone(), hash2.clone()];
+        let stats = cleanup_orphan_chunks(&base_dir, &active_hashes).unwrap();
+
+        assert_eq!(stats.removed_count, 0, "不应删除任何 chunk");
+        assert_eq!(stats.kept_count, 2, "应保留 2 个 chunk");
+
+        // 验证文件仍然存在
+        assert!(chunk_dir.join(&hash1).exists());
+        assert!(chunk_dir.join(&hash2).exists());
+    }
+
+    #[test]
+    fn test_cleanup_orphan_chunks_removes_empty_dir() {
+        let dir = tempdir().unwrap();
+        let base_dir = dir.path().join("chunks");
+
+        let prefix = "ef";
+        let orphan_hash = format!("ef{}", "c".repeat(14));
+
+        let chunk_dir = base_dir.join(prefix);
+        std::fs::create_dir_all(&chunk_dir).unwrap();
+        std::fs::write(chunk_dir.join(&orphan_hash), b"orphan").unwrap();
+
+        // 没有活跃 hash，所有 chunk 都将被删除
+        let active_hashes: Vec<String> = vec![];
+        let stats = cleanup_orphan_chunks(&base_dir, &active_hashes).unwrap();
+
+        assert_eq!(stats.removed_count, 1);
+        // 目录应被自动删除
+        assert!(!chunk_dir.exists(), "空目录应被自动删除");
+    }
+
+    // ========== verify_chunk 测试 ==========
+
+    #[test]
+    fn test_verify_chunk_correct_hash() {
+        let dir = tempdir().unwrap();
+        let base_dir = dir.path().join("chunks");
+        let file_path = dir.path().join("test.txt");
+
+        let content = b"verify me!";
+        std::fs::write(&file_path, content).unwrap();
+
+        let (chunk_hashes, _, _, _) =
+            store_file(&base_dir, &file_path, 4096).unwrap();
+        let hash = &chunk_hashes[0];
+
+        let result = verify_chunk(&base_dir, hash).unwrap();
+        assert!(result, "正确的 hash 应返回 true");
+    }
+
+    #[test]
+    fn test_verify_chunk_tampered_returns_false() {
+        let dir = tempdir().unwrap();
+        let base_dir = dir.path().join("chunks");
+
+        // 手动创建一个 chunk 文件，内容与 hash 不匹配
+        let prefix = "ab";
+        let hash = compute_hash(b"original content");
+        // 实际写入的是不同内容
+        let chunk_dir = base_dir.join(prefix);
+        std::fs::create_dir_all(&chunk_dir).unwrap();
+        std::fs::write(chunk_dir.join(&hash), b"TAMPERED content").unwrap();
+
+        let result = verify_chunk(&base_dir, &hash).unwrap();
+        assert!(!result, "被篡改的 chunk 应返回 false");
+    }
+
+    #[test]
+    fn test_verify_chunk_nonexistent_returns_false() {
+        let dir = tempdir().unwrap();
+        let base_dir = dir.path().join("chunks");
+
+        let result = verify_chunk(&base_dir, "0000000000000000").unwrap();
+        assert!(!result, "不存在的 chunk 应返回 false");
+    }
+
+    // ========== get_storage_usage 测试 ==========
+
+    #[test]
+    fn test_get_storage_usage_correct() {
+        let dir = tempdir().unwrap();
+        let base_dir = dir.path().join("chunks");
+        let file_path = dir.path().join("usage_test.txt");
+
+        // 存储两个不同内容的文件到不同 chunk
+        let content1 = b"first file content for usage";
+        let content2 = b"second file content for usage test";
+        std::fs::write(&file_path, content1).unwrap();
+        let (_hashes1, _, _, _) =
+            store_file(&base_dir, &file_path, 4096).unwrap();
+        std::fs::write(&file_path, content2).unwrap();
+        let (_hashes2, _, _, _) =
+            store_file(&base_dir, &file_path, 4096).unwrap();
+
+        let usage = get_storage_usage(&base_dir).unwrap();
+
+        // 两个不同内容应产生 2 个 chunk
+        assert_eq!(usage.total_chunks, 2, "应有 2 个 chunk");
+        assert_eq!(
+            usage.total_bytes,
+            (content1.len() + content2.len()) as u64,
+            "总字节数应为两个文件内容大小之和"
+        );
+    }
+
+    #[test]
+    fn test_get_storage_usage_empty_dir() {
+        let dir = tempdir().unwrap();
+        let base_dir = dir.path().join("empty_chunks");
+
+        let usage = get_storage_usage(&base_dir).unwrap();
+        assert_eq!(usage.total_chunks, 0);
+        assert_eq!(usage.total_bytes, 0);
+    }
+
+    // ========== hash_prefix 测试 ==========
+
+    #[test]
+    fn test_hash_prefix_too_short_error() {
+        // 空字符串
+        let result = hash_prefix("");
+        assert!(result.is_err(), "空 hash 应返回错误");
+
+        // 单字符
+        let result = hash_prefix("a");
+        assert!(result.is_err(), "单字符 hash 应返回错误");
+
+        // 验证错误信息包含中文提示
+        let err = hash_prefix("").unwrap_err();
+        let err_msg = format!("{}", err);
+        assert!(
+            err_msg.contains("chunk hash too short"),
+            "错误信息应包含 'chunk hash too short'"
+        );
+    }
+
+    #[test]
+    fn test_hash_prefix_valid() {
+        let result = hash_prefix("abcdef1234567890");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "ab");
+
+        // 正好 2 字符
+        let result = hash_prefix("xy");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "xy");
+    }
+
+    // ========== 多 chunk restore 集成测试 ==========
+
+    #[test]
+    fn test_store_and_restore_large_file_roundtrip() {
+        let dir = tempdir().unwrap();
+        let base_dir = dir.path().join("chunks");
+        let file_path = dir.path().join("large_original.bin");
+        let restore_path = dir.path().join("large_restored.bin");
+
+        // 创建 20000 字节的内容，chunk_size=4096 → 5 个 chunk
+        let content: Vec<u8> = (0..20000).map(|i| (i % 251) as u8).collect(); // 251 为质数
+        std::fs::write(&file_path, &content).unwrap();
+
+        let (chunk_hashes, _chunk_sizes, file_size, checksum) =
+            store_file(&base_dir, &file_path, 4096).unwrap();
+
+        assert_eq!(chunk_hashes.len(), 5);
+        assert_eq!(file_size, 20000);
+
+        // 恢复文件
+        restore_file(&base_dir, &chunk_hashes, &restore_path).unwrap();
+
+        let restored = std::fs::read(&restore_path).unwrap();
+        assert_eq!(content, restored.as_slice(), "大文件 roundtrip 内容应一致");
+
+        // 验证 checksum
+        assert_eq!(compute_hash(&restored), checksum);
+    }
+
+    // ========== 辅助 trait 测试 ==========
+    // restore_file 错误类型是 AppError::Other，使用 is_err 即可
+
+    trait ResultExt<T> {
+        fn is_restore_err(&self) -> bool;
+    }
+
+    impl<T> ResultExt<T> for Result<T, crate::error::AppError> {
+        fn is_restore_err(&self) -> bool {
+            self.is_err()
+        }
+    }
+}

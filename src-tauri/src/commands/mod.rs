@@ -113,6 +113,14 @@ pub async fn get_children(
 }
 
 #[tauri::command]
+pub async fn get_archive_tree(
+    state: State<'_, AppState>,
+    file_path: Option<String>,
+) -> Result<Vec<Archive>, AppError> {
+    state.service.get_archive_tree(file_path.as_deref())
+}
+
+#[tauri::command]
 pub async fn get_statistics(
     state: State<'_, AppState>,
 ) -> Result<serde_json::Value, AppError> {

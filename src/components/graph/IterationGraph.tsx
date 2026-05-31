@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
+import { invoke } from '@tauri-apps/api/tauri';
 import { useArchiveStore } from '../../stores/archiveStore';
 import { formatFileSize } from '../../utils/format';
 import { formatSmartTime } from '../../utils/time';
@@ -133,23 +134,28 @@ function TreeNodeComponent({
 }
 
 export function IterationGraph() {
-  const { archives, fetchArchives, selectArchive, restoreArchive } = useArchiveStore();
+  const { selectArchive, restoreArchive } = useArchiveStore();
   const [tree, setTree] = useState<TreeNode[]>([]);
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
   const [zoom, setZoom] = useState(1);
 
-  useEffect(() => {
-    fetchArchives();
-  }, [fetchArchives]);
+  const loadTree = useCallback(async () => {
+    try {
+      const archives = await invoke<Archive[]>('get_archive_tree');
+      const builtTree = buildTree(archives);
+      setTree(builtTree);
+
+      // Auto-expand root nodes
+      const rootIds = new Set(builtTree.map(n => n.archive.id));
+      setExpandedNodes(rootIds);
+    } catch (err) {
+      console.error('Failed to load archive tree:', err);
+    }
+  }, []);
 
   useEffect(() => {
-    const builtTree = buildTree(archives);
-    setTree(builtTree);
-    
-    // Auto-expand root nodes
-    const rootIds = new Set(builtTree.map(n => n.archive.id));
-    setExpandedNodes(rootIds);
-  }, [archives]);
+    loadTree();
+  }, [loadTree]);
 
   const toggleNode = useCallback((id: string) => {
     setExpandedNodes(prev => {

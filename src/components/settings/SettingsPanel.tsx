@@ -54,8 +54,8 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
   if (!localConfig) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
-        <div className="bg-white rounded-xl shadow-xl p-6">
-          <p className="text-sm text-gray-500">加载配置中...</p>
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6">
+          <p className="text-sm text-gray-500 dark:text-gray-400">加载配置中...</p>
         </div>
       </div>
     );
@@ -63,16 +63,16 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
-      <div className="bg-white rounded-xl shadow-xl w-[600px] max-h-[80vh] overflow-hidden flex flex-col">
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-[600px] max-h-[80vh] overflow-hidden flex flex-col">
         {/* Header */}
-        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+        <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Settings className="w-5 h-5 text-gray-500" />
+            <Settings className="w-5 h-5 text-gray-500 dark:text-gray-400" />
             <h2 className="text-lg font-semibold">设置</h2>
           </div>
           <button
             onClick={onClose}
-            className="px-3 py-1 text-sm text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition"
+            className="px-3 py-1 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition"
           >
             关闭
           </button>
@@ -82,7 +82,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
           {/* Watcher Config */}
           <section>
-            <h3 className="text-sm font-semibold text-gray-700 mb-3">文件监控</h3>
+            <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-3">文件监控</h3>
             <div className="space-y-3">
               <label className="flex items-center gap-2">
                 <input
@@ -96,11 +96,11 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                   }
                   className="rounded border-gray-300"
                 />
-                <span className="text-sm text-gray-600">启用文件监控</span>
+                <span className="text-sm text-gray-600 dark:text-gray-300">启用文件监控</span>
               </label>
 
               <div>
-                <label className="block text-xs text-gray-500 mb-1">
+                <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">
                   自动存档延迟（秒）
                 </label>
                 <input
@@ -115,12 +115,12 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                       },
                     })
                   }
-                  className="w-32 px-3 py-1.5 border border-gray-200 rounded-lg text-sm"
+                  className="w-32 px-3 py-1.5 border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 rounded-lg text-sm"
                 />
               </div>
 
               <div>
-                <label className="block text-xs text-gray-500 mb-1">
+                <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">
                   最大文件大小（MB）
                 </label>
                 <input
@@ -135,7 +135,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                       },
                     })
                   }
-                  className="w-32 px-3 py-1.5 border border-gray-200 rounded-lg text-sm"
+                  className="w-32 px-3 py-1.5 border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 rounded-lg text-sm"
                 />
               </div>
             </div>
@@ -143,10 +143,10 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
 
           {/* Storage Config */}
           <section>
-            <h3 className="text-sm font-semibold text-gray-700 mb-3">存储管理</h3>
+            <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-3">存储管理</h3>
             <div className="space-y-3">
               <div>
-                <label className="block text-xs text-gray-500 mb-1">
+                <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">
                   分块大小（KB）
                 </label>
                 <input
@@ -161,12 +161,12 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                       },
                     })
                   }
-                  className="w-32 px-3 py-1.5 border border-gray-200 rounded-lg text-sm"
+                  className="w-32 px-3 py-1.5 border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 rounded-lg text-sm"
                 />
               </div>
 
               <div>
-                <label className="block text-xs text-gray-500 mb-1">
+                <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">
                   保留版本数量（0=不限制）
                 </label>
                 <input
@@ -181,7 +181,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                       },
                     })
                   }
-                  className="w-32 px-3 py-1.5 border border-gray-200 rounded-lg text-sm"
+                  className="w-32 px-3 py-1.5 border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 rounded-lg text-sm"
                 />
               </div>
 
@@ -197,19 +197,19 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                   }
                   className="rounded border-gray-300"
                 />
-                <span className="text-sm text-gray-600">启用重复数据删除</span>
+                <span className="text-sm text-gray-600 dark:text-gray-300">启用重复数据删除</span>
               </label>
             </div>
           </section>
 
           {/* Storage Maintenance */}
           <section>
-            <h3 className="text-sm font-semibold text-gray-700 mb-3">存储维护</h3>
+            <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-3">存储维护</h3>
             <div className="flex gap-2">
               <button
                 onClick={handleCleanup}
                 disabled={cleaning}
-                className="flex items-center gap-1.5 px-3 py-2 bg-orange-50 text-orange-600 rounded-lg hover:bg-orange-100 transition text-sm disabled:opacity-50"
+                className="flex items-center gap-1.5 px-3 py-2 bg-orange-50 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 rounded-lg hover:bg-orange-100 transition text-sm disabled:opacity-50"
               >
                 <Trash2 className="w-4 h-4" />
                 {cleaning ? '清理中...' : '清理孤儿数据'}
@@ -217,19 +217,19 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
               <button
                 onClick={handleVerify}
                 disabled={verifying}
-                className="flex items-center gap-1.5 px-3 py-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition text-sm disabled:opacity-50"
+                className="flex items-center gap-1.5 px-3 py-2 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg hover:bg-blue-100 transition text-sm disabled:opacity-50"
               >
                 <Shield className="w-4 h-4" />
                 {verifying ? '验证中...' : '验证完整性'}
               </button>
             </div>
             {cleanupResult && (
-              <p className="mt-2 text-xs text-gray-600 bg-gray-50 p-2 rounded">
+              <p className="mt-2 text-xs text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-gray-700 p-2 rounded">
                 {cleanupResult}
               </p>
             )}
             {verifyResult && (
-              <p className="mt-2 text-xs text-gray-600 bg-gray-50 p-2 rounded">
+              <p className="mt-2 text-xs text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-gray-700 p-2 rounded">
                 {verifyResult}
               </p>
             )}
@@ -237,10 +237,10 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
 
           {/* Log Config */}
           <section>
-            <h3 className="text-sm font-semibold text-gray-700 mb-3">日志设置</h3>
+            <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-3">日志设置</h3>
             <div className="space-y-3">
               <div>
-                <label className="block text-xs text-gray-500 mb-1">日志级别</label>
+                <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">日志级别</label>
                 <select
                   value={localConfig.log.level}
                   onChange={(e) =>
@@ -249,7 +249,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                       log: { ...localConfig.log, level: e.target.value },
                     })
                   }
-                  className="w-40 px-3 py-1.5 border border-gray-200 rounded-lg text-sm"
+                  className="w-40 px-3 py-1.5 border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 rounded-lg text-sm"
                 >
                   <option value="trace">Trace</option>
                   <option value="debug">Debug</option>
@@ -270,14 +270,14 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                   }
                   className="rounded border-gray-300"
                 />
-                <span className="text-sm text-gray-600">输出到日志文件</span>
+                <span className="text-sm text-gray-600 dark:text-gray-300">输出到日志文件</span>
               </label>
             </div>
           </section>
 
           {/* App Config */}
           <section>
-            <h3 className="text-sm font-semibold text-gray-700 mb-3">应用设置</h3>
+            <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-3">应用设置</h3>
             <div className="space-y-3">
               <label className="flex items-center gap-2">
                 <input
@@ -291,7 +291,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                   }
                   className="rounded border-gray-300"
                 />
-                <span className="text-sm text-gray-600">最小化到系统托盘</span>
+                <span className="text-sm text-gray-600 dark:text-gray-300">最小化到系统托盘</span>
               </label>
 
               <label className="flex items-center gap-2">
@@ -306,19 +306,19 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                   }
                   className="rounded border-gray-300"
                 />
-                <span className="text-sm text-gray-600">开机自启</span>
+                <span className="text-sm text-gray-600 dark:text-gray-300">开机自启</span>
               </label>
             </div>
           </section>
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t border-gray-100 flex justify-end gap-2">
+        <div className="px-6 py-4 border-t border-gray-100 dark:border-gray-700 flex justify-end gap-2">
           <button
             onClick={() => {
               setLocalConfig(JSON.parse(JSON.stringify(config)));
             }}
-            className="flex items-center gap-1.5 px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition"
+            className="flex items-center gap-1.5 px-4 py-2 text-sm text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition"
           >
             <RotateCcw className="w-4 h-4" />
             重置
@@ -336,5 +336,3 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
     </div>
   );
 }
-
-
