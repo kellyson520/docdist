@@ -180,6 +180,7 @@ pub fn run() {
             commands::delete_archives_batch,
             commands::update_archive,
             commands::compare_archives,
+            commands::compare_archives_enhanced,
             commands::get_timeline,
             commands::get_children,
             commands::get_archive_tree,

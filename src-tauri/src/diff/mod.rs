@@ -1,16 +1,21 @@
-use serde::Serialize;
+pub mod engine;
+pub mod parsers; // 预留，T2 会创建 parsers/mod.rs
+pub mod summary; // 预留，T4 会创建 summary.rs
+pub mod types; // 预留，T4 会创建 engine.rs
+
+use serde::{Deserialize, Serialize};
 use similar::{ChangeTag, TextDiff};
 
 /// Maximum number of changes per hunk before splitting.
 const HUNK_MAX_LINES: usize = 20;
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DiffResult {
     pub hunks: Vec<DiffHunk>,
     pub stats: DiffStats,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DiffHunk {
     pub old_start: u32,
     pub old_lines: u32,
@@ -19,7 +24,7 @@ pub struct DiffHunk {
     pub changes: Vec<DiffChange>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DiffChange {
     pub change_type: String,
     pub content: String,
@@ -27,7 +32,7 @@ pub struct DiffChange {
     pub new_line: Option<u32>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DiffStats {
     pub additions: u32,
     pub deletions: u32,

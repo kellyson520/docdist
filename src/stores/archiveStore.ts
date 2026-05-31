@@ -4,6 +4,7 @@ import { createLogger } from '../utils/logger';
 import { invoke } from '@tauri-apps/api/tauri';
 import { listen } from '@tauri-apps/api/event';
 import type { Archive, DiffResult, Statistics } from '../types';
+import type { EnhancedDiffResult } from '../types/diff';
 
 const log = createLogger('store');
 
@@ -63,6 +64,7 @@ interface ArchiveState {
   selectedArchive: Archive | null;
   compareTarget: Archive | null;
   diffResult: DiffResult | null;
+  enhancedDiffResult: EnhancedDiffResult | null;
   timeline: Archive[];
   statistics: Statistics | null;
   loading: boolean;
@@ -97,6 +99,8 @@ interface ArchiveState {
   deleteArchivesBatch: (ids: string[]) => Promise<number>;
   updateArchive: (id: string, note: string, tags: string[]) => Promise<void>;
   compareArchives: (id1: string, id2: string) => Promise<void>;
+  compareArchivesEnhanced: (id1: string, id2: string) => Promise<void>;
+  clearEnhancedDiff: () => void;
   fetchTimeline: (filePath: string) => Promise<void>;
   fetchStatistics: () => Promise<void>;
 
@@ -140,6 +144,7 @@ export const useArchiveStore = create<ArchiveState>((set, get) => ({
   selectedArchive: null,
   compareTarget: null,
   diffResult: null,
+  enhancedDiffResult: null,
   timeline: [],
   statistics: null,
   loading: false,
@@ -281,6 +286,19 @@ export const useArchiveStore = create<ArchiveState>((set, get) => ({
       set({ error: e instanceof Error ? e.message : String(e), loading: false });
     }
   },
+
+  compareArchivesEnhanced: async (id1: string, id2: string) => {
+    set({ loading: true, error: null });
+    try {
+      const result = await invoke<EnhancedDiffResult>('compare_archives_enhanced', { id1, id2 });
+      set({ enhancedDiffResult: result, loading: false });
+    } catch (err) {
+      set({ error: String(err), loading: false });
+      throw err;
+    }
+  },
+
+  clearEnhancedDiff: () => set({ enhancedDiffResult: null }),
 
   fetchTimeline: async (filePath: string) => {
     set({ loading: true, error: null });

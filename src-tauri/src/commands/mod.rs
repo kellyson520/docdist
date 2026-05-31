@@ -1,5 +1,6 @@
 use crate::config::AppConfig;
 use crate::db::Archive;
+use crate::diff::types::EnhancedDiffResult;
 use crate::diff::DiffResult;
 use crate::error::AppError;
 use crate::storage;
@@ -94,6 +95,16 @@ pub async fn compare_archives(
     id2: String,
 ) -> Result<DiffResult, AppError> {
     state.service.compare_archives(&id1, &id2)
+}
+
+/// 增强差异对比
+#[tauri::command]
+pub async fn compare_archives_enhanced(
+    state: State<'_, AppState>,
+    id1: String,
+    id2: String,
+) -> Result<EnhancedDiffResult, AppError> {
+    state.service.compare_archives_enhanced(&id1, &id2)
 }
 
 #[tauri::command]

@@ -3,6 +3,7 @@ import { useArchiveStore } from './stores/archiveStore';
 import { ArchiveList } from './components/archive/ArchiveList';
 import { TimelineView } from './components/timeline/TimelineView';
 import { DiffViewer } from './components/diff/DiffViewer';
+import { EnhancedDiffViewer } from './components/diff/EnhancedDiffViewer';
 import { IterationGraph } from './components/graph/IterationGraph';
 import { MiniMode } from './components/mini/MiniMode';
 import { ThemeToggle } from './components/common/ThemeToggle';
@@ -15,13 +16,14 @@ import { FolderOpen, Clock, GitCompare, GitBranch, Minimize2, Settings, Terminal
 import './styles/themes.css';
 import './styles/animations.css';
 
-type View = 'list' | 'timeline' | 'diff' | 'graph';
+type View = 'list' | 'timeline' | 'diff' | 'enhanced-diff' | 'graph';
 
 export default function App() {
   const { fetchArchives, fetchStatistics, statistics, view, setView } = useArchiveStore();
   const [isMini, setIsMini] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showLogViewer, setShowLogViewer] = useState(false);
+  const [showEnhancedDiff, setShowEnhancedDiff] = useState(false);
 
   // Use refs for latest state in event handlers to avoid re-registering listeners
   const showSettingsRef = useRef(showSettings);
@@ -42,7 +44,13 @@ export default function App() {
 
   // 统一使用 store 的 view 状态
   const handleViewChange = useCallback((newView: View) => {
-    setView(newView as 'list' | 'timeline' | 'diff' | 'graph' | 'mini');
+    if (newView === 'enhanced-diff') {
+      setShowEnhancedDiff(true);
+      setView('diff');
+    } else {
+      setShowEnhancedDiff(false);
+      setView(newView as 'list' | 'timeline' | 'diff' | 'graph' | 'mini');
+    }
   }, [setView]);
 
   // 全局键盘快捷键 — 使用 ref 避免频繁重新注册
@@ -66,6 +74,10 @@ export default function App() {
           case '4':
             e.preventDefault();
             handleViewChange('graph');
+            break;
+          case '5':
+            e.preventDefault();
+            handleViewChange('enhanced-diff');
             break;
           case ',':
             e.preventDefault();
@@ -92,6 +104,7 @@ export default function App() {
     { id: 'list' as View, label: '存档管理', icon: FolderOpen, shortcut: '⌘1' },
     { id: 'timeline' as View, label: '时间轴', icon: Clock, shortcut: '⌘2' },
     { id: 'diff' as View, label: '版本对比', icon: GitCompare, shortcut: '⌘3' },
+    { id: 'enhanced-diff' as View, label: '增强对比', icon: GitCompare, shortcut: '⌘5' },
     { id: 'graph' as View, label: '迭代图谱', icon: GitBranch, shortcut: '⌘4' },
   ];
 
@@ -124,12 +137,16 @@ export default function App() {
 
           {/* Navigation */}
           <nav className="flex-1 p-3 space-y-1">
-            {navItems.map(({ id, label, icon: Icon, shortcut }) => (
+            {navItems.map(({ id, label, icon: Icon, shortcut }) => {
+              const isActive = id === 'enhanced-diff'
+                ? (view === 'diff' && showEnhancedDiff)
+                : (view === id && (id !== 'diff' || !showEnhancedDiff));
+              return (
               <button
                 key={id}
                 onClick={() => handleViewChange(id)}
                 className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-all duration-150 group ${
-                  view === id
+                  isActive
                     ? 'bg-primary-50 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400 font-medium shadow-sm'
                     : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 hover:text-gray-800 dark:hover:text-gray-200'
                 }`}
@@ -140,7 +157,8 @@ export default function App() {
                   {shortcut}
                 </span>
               </button>
-            ))}
+              );
+            })}
           </nav>
 
           {/* Stats */}
@@ -197,7 +215,9 @@ export default function App() {
           <div className="flex-1 overflow-auto p-6 animate-fade-in">
             {view === 'list' && <ArchiveList />}
             {view === 'timeline' && <TimelineView />}
-            {view === 'diff' && <DiffViewer />}
+            {view === 'diff' && (
+              showEnhancedDiff ? <EnhancedDiffViewer /> : <DiffViewer />
+            )}
             {view === 'graph' && <IterationGraph />}
           </div>
         </div>

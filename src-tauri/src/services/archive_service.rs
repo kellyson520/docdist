@@ -1,5 +1,7 @@
 use crate::db::{self, Archive, DbPool};
 use crate::diff;
+use crate::diff::types::*;
+use crate::diff::DiffStats as DiffResultStats;
 use crate::error::AppError;
 use crate::storage;
 use std::collections::VecDeque;
@@ -497,6 +499,152 @@ impl ArchiveService {
             }
         }
         Ok(String::from_utf8_lossy(&content).to_string())
+    }
+
+    /// 读取 chunks 为原始字节
+    fn read_chunks_as_bytes(
+        &self,
+        chunk_hashes: &[String],
+    ) -> Result<Vec<u8>, AppError> {
+        let mut content = Vec::new();
+        for hash in chunk_hashes {
+            if hash.len() < 2 {
+                tracing::warn!("Skipping chunk with invalid hash: {}", hash);
+                continue;
+            }
+            let chunk_path = self.chunks_dir.join(&hash[..2]).join(hash);
+            if chunk_path.exists() {
+                let data = std::fs::read(&chunk_path)?;
+                content.extend_from_slice(&data);
+            }
+        }
+        Ok(content)
+    }
+
+    /// 增强差异对比
+    pub fn compare_archives_enhanced(
+        &self,
+        id1: &str,
+        id2: &str,
+    ) -> Result<EnhancedDiffResult, AppError> {
+        // 1. 获取两个存档
+        let archive1 = db::get_archive(&self.pool, id1)?
+            .ok_or_else(|| AppError::Other("存档1不存在".to_string()))?;
+        let _archive2 = db::get_archive(&self.pool, id2)?
+            .ok_or_else(|| AppError::Other("存档2不存在".to_string()))?;
+
+        // 2. 获取 chunks
+        let chunks1 = db::get_archive_chunks(&self.pool, id1)?;
+        let chunks2 = db::get_archive_chunks(&self.pool, id2)?;
+
+        // 3. 恢复文件内容
+        let old_content = self.read_chunks_as_bytes(&chunks1)?;
+        let new_content = self.read_chunks_as_bytes(&chunks2)?;
+
+        // 4. 检测文件类型
+        let file_path = &archive1.file_path;
+        let file_type = detect_file_type(file_path, &old_content);
+
+        // 5. 根据类型执行差异计算
+        match &file_type {
+            FileType::Text { .. } => {
+                // 文本文件：完整差异
+                let old_text = String::from_utf8_lossy(&old_content);
+                let new_text = String::from_utf8_lossy(&new_content);
+
+                let diff_result = diff::compute_diff(&old_text, &new_text);
+                let summary_gen = crate::diff::summary::SummaryGenerator::new();
+                let summary = summary_gen.generate(&diff_result);
+
+                Ok(EnhancedDiffResult {
+                    diff_result,
+                    summary,
+                    file_type,
+                    preview: Some(ContentPreview {
+                        old_preview: old_text.chars().take(500).collect(),
+                        new_preview: new_text.chars().take(500).collect(),
+                        preview_lines: 20,
+                    }),
+                })
+            }
+            _ => {
+                // 二进制文件：简单比对
+                let binary_diff =
+                    crate::diff::engine::BinaryDiffEngine::compare(
+                        &old_content,
+                        &new_content,
+                    )?;
+
+                Ok(EnhancedDiffResult {
+                    diff_result: diff::DiffResult {
+                        hunks: vec![],
+                        stats: DiffResultStats {
+                            additions: 0,
+                            deletions: 0,
+                            unchanged: 0,
+                        },
+                    },
+                    summary: DiffSummary {
+                        stats: DiffStats {
+                            additions: 0,
+                            deletions: 0,
+                            modifications: 0,
+                            unchanged: 0,
+                            total: 0,
+                        },
+                        changes: vec![],
+                        change_distribution: ChangeDistribution {
+                            additions: 0,
+                            deletions: 0,
+                            modifications: 0,
+                            moves: 0,
+                            renames: 0,
+                        },
+                        affected_regions: vec![],
+                        ai_summary: Some(binary_diff.summary),
+                    },
+                    file_type,
+                    preview: None,
+                })
+            }
+        }
+    }
+}
+
+fn detect_file_type(path: &str, data: &[u8]) -> FileType {
+    let ext = std::path::Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+
+    match ext.as_str() {
+        "txt" | "md" | "json" | "xml" | "html" | "css" | "js" | "ts"
+        | "jsx" | "tsx" | "py" | "rs" | "go" | "java" | "c" | "cpp" | "h"
+        | "hpp" | "cs" | "rb" | "php" | "swift" | "kt" => FileType::Text {
+            encoding: "UTF-8".to_string(),
+            line_ending: "\n".to_string(),
+        },
+        "pdf" => FileType::PDF {
+            page_count: 0,
+            has_images: false,
+        },
+        "dxf" | "dwg" => FileType::CAD {
+            format: ext.to_uppercase(),
+            layer_count: 0,
+            entity_count: 0,
+        },
+        "png" | "jpg" | "jpeg" | "gif" | "bmp" | "webp" | "svg" => {
+            FileType::Image {
+                width: 0,
+                height: 0,
+                format: ext,
+            }
+        }
+        _ => FileType::Binary {
+            mime_type: "application/octet-stream".to_string(),
+            size: data.len() as u64,
+        },
     }
 }
 

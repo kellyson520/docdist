@@ -7,3 +7,15 @@ export type {
   DiffStats,
   Statistics,
 } from './generated';
+
+// 增强差异对比类型
+export type {
+  DiffSummary,
+  ChangeSummary,
+  ChangeLocation,
+  ChangeDistribution,
+  AffectedRegion,
+  EnhancedDiffResult,
+  FileType,
+  ContentPreview,
+} from './diff';
