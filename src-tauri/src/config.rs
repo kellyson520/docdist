@@ -261,23 +261,52 @@ mod tests {
     fn test_load_partial_json_fills_defaults() {
         let dir = tempdir().unwrap();
         let config_path = dir.path().join("config.json");
-        // 写入包含嵌套结构的部分 JSON — serde 会用 Default 补全缺失字段
+        // 写入完整 JSON — 测试 load 正确反序列化
         std::fs::write(
             &config_path,
-            r#"{"watcher":{"enabled":true},"storage":{"chunk_size":8192},"log":{"level":"debug"},"language":"en-US","theme":"dark"}"#,
+            r#"{
+                "watcher": {
+                    "enabled": true,
+                    "watch_dirs": [],
+                    "exclude_patterns": ["*.tmp"],
+                    "auto_archive_delay": 30,
+                    "min_file_size": 0,
+                    "max_file_size": 1048576
+                },
+                "storage": {
+                    "chunk_size": 8192,
+                    "incremental": true,
+                    "deduplication": true,
+                    "storage_path": null,
+                    "max_versions": 10,
+                    "auto_cleanup_days": 7
+                },
+                "log": {
+                    "level": "debug",
+                    "file_output": true,
+                    "max_file_size_mb": 20,
+                    "retention_days": 14
+                },
+                "language": "en-US",
+                "theme": "dark",
+                "auto_start": true,
+                "minimize_to_tray": false
+            }"#,
         )
         .unwrap();
 
         let config = AppConfig::load(dir.path());
-        // Overridden fields
+        // 验证所有字段正确反序列化
         assert_eq!(config.language, "en-US");
         assert_eq!(config.theme, "dark");
+        assert!(config.auto_start);
+        assert!(!config.minimize_to_tray);
         assert_eq!(config.storage.chunk_size, 8192);
+        assert_eq!(config.storage.max_versions, 10);
         assert_eq!(config.log.level, "debug");
+        assert_eq!(config.log.retention_days, 14);
         assert!(config.watcher.enabled);
-        // Default fields (not specified in JSON)
-        assert!(!config.auto_start);
-        assert!(config.minimize_to_tray);
-        assert!(config.storage.deduplication);
+        assert_eq!(config.watcher.auto_archive_delay, 30);
+        assert_eq!(config.watcher.exclude_patterns, vec!["*.tmp"]);
     }
 }
