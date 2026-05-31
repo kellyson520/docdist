@@ -136,6 +136,14 @@ pub async fn start_watcher(
     paths: Vec<String>,
 ) -> Result<(), AppError> {
     let mut watcher = state.watcher.lock().unwrap_or_else(|e| e.into_inner());
+
+    // 从配置读取防抖延迟
+    let config = state.config.lock().unwrap_or_else(|e| e.into_inner());
+    watcher.set_debounce_duration(std::time::Duration::from_secs(
+        config.watcher.auto_archive_delay,
+    ));
+    drop(config);
+
     // 设置自动存档回调：通过 Tauri 事件通知前端
     let handle = app_handle.clone();
     watcher.set_auto_archive_callback(std::sync::Arc::new(
@@ -215,6 +223,35 @@ pub async fn verify_chunks(
 
 // ==================== 配置管理 ====================
 
+// ==================== 日志管理 ====================
+
+#[tauri::command]
+pub async fn read_log_file(
+    state: State<'_, AppState>,
+    lines: Option<usize>,
+) -> Result<Vec<String>, String> {
+    let max_lines = lines.unwrap_or(100);
+    let log_path = state.data_dir.join("logs").join("docdist.log");
+
+    if !log_path.exists() {
+        return Ok(vec![]);
+    }
+
+    let content = std::fs::read_to_string(&log_path)
+        .map_err(|e| format!("读取日志文件失败: {}", e))?;
+
+    let all_lines: Vec<String> =
+        content.lines().map(|s| s.to_string()).collect();
+    let total = all_lines.len();
+    let start = if total > max_lines {
+        total - max_lines
+    } else {
+        0
+    };
+
+    Ok(all_lines[start..].to_vec())
+}
+
 #[tauri::command]
 pub async fn get_config(
     state: State<'_, AppState>,
@@ -237,6 +274,9 @@ pub async fn update_config(
     // 如果 watcher 配置变了，应用到 watcher
     let watcher = state.watcher.lock().unwrap_or_else(|e| e.into_inner());
     watcher.set_exclude_patterns(config.watcher.exclude_patterns.clone());
+    watcher.set_debounce_duration(std::time::Duration::from_secs(
+        config.watcher.auto_archive_delay,
+    ));
 
     Ok(())
 }

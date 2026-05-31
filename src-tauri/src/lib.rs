@@ -15,6 +15,7 @@ mod storage;
 use config::AppConfig;
 use services::archive_service::ArchiveService;
 use std::sync::Mutex;
+use std::time::Duration;
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
 pub struct AppState {
@@ -114,11 +115,16 @@ pub fn run() {
     tracing::info!("存档服务初始化完成 (chunk_size: {})", chunk_size);
 
     // 初始化 watcher
-    let file_watcher = watcher::FileWatcher::new();
+    let mut file_watcher = watcher::FileWatcher::new();
     file_watcher
         .set_exclude_patterns(app_config.watcher.exclude_patterns.clone());
-    // TODO: Watcher 的防抖延迟应从 app_config.watcher.auto_archive_delay 读取，
-    // 但 FileWatcher 当前没有 set_debounce_duration 方法，需要 Agent-B 在 watcher/mod.rs 中添加。
+    // 从配置读取防抖延迟
+    file_watcher.set_debounce_duration(Duration::from_secs(
+        app_config.watcher.auto_archive_delay,
+    ));
+
+    // 捕获启动前的配置，供 setup 闭包恢复 watcher
+    let restore_watcher_cfg = app_config.watcher.clone();
 
     tracing::info!("DocDist 就绪 ✓");
 
@@ -128,6 +134,38 @@ pub fn run() {
             watcher: Mutex::new(file_watcher),
             config: Mutex::new(app_config),
             data_dir: data_dir.clone(),
+        })
+        .setup(move |app| {
+            // 启动时自动恢复 watcher 监控（如果配置中 enabled = true）
+            if restore_watcher_cfg.enabled
+                && !restore_watcher_cfg.watch_dirs.is_empty()
+            {
+                let state: tauri::State<AppState> = app.state();
+                let mut watcher =
+                    state.watcher.lock().unwrap_or_else(|e| e.into_inner());
+                let handle = app.handle().clone();
+                watcher.set_auto_archive_callback(std::sync::Arc::new(
+                    move |path: String| {
+                        let _ = handle.emit_all(
+                            "auto-archive-request",
+                            serde_json::json!({ "path": path }),
+                        );
+                    },
+                ));
+                let app_handle = app.handle().clone();
+                if let Err(e) = watcher.start(
+                    restore_watcher_cfg.watch_dirs.clone(),
+                    Some(app_handle),
+                ) {
+                    tracing::error!("自动恢复 watcher 失败: {}", e);
+                } else {
+                    tracing::info!(
+                        "Watcher 自动恢复: {:?}",
+                        restore_watcher_cfg.watch_dirs
+                    );
+                }
+            }
+            Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             // 存档管理
@@ -156,6 +194,8 @@ pub fn run() {
             // 配置管理
             commands::get_config,
             commands::update_config,
+            // 日志管理
+            commands::read_log_file,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

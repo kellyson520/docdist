@@ -4,9 +4,11 @@ import { formatFileSize } from '../../utils/format';
 import { formatSmartTime } from '../../utils/time';
 import { TagBadge } from '../common/TagBadge';
 import {
-  RotateCcw, Trash2, GitCompare, FileText, MoreVertical,
+  RotateCcw, Trash2, GitCompare, FileText, MoreVertical, Edit2,
   Clock, HardDrive, Hash, CheckSquare, Square,
 } from 'lucide-react';
+import { EditArchiveDialog } from './EditArchiveDialog';
+import { useArchiveStore } from '../../stores/archiveStore';
 
 interface ArchiveCardProps {
   archive: Archive;
@@ -30,6 +32,8 @@ export function ArchiveCard({
   onToggleSelect,
 }: ArchiveCardProps) {
   const [showMenu, setShowMenu] = useState(false);
+  const [showEditDialog, setShowEditDialog] = useState(false);
+  const updateArchive = useArchiveStore((s) => s.updateArchive);
 
   // 文件类型图标颜色
   const getFileColor = (name: string) => {
@@ -96,6 +100,13 @@ export function ArchiveCard({
 
           {/* Actions */}
           <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button
+              onClick={(e) => { e.stopPropagation(); setShowEditDialog(true); }}
+              className="p-1.5 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-lg transition"
+              title="编辑"
+            >
+              <Edit2 className="w-3.5 h-3.5 text-amber-500" />
+            </button>
             <button
               onClick={(e) => { e.stopPropagation(); onRestore(); }}
               className="p-1.5 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-lg transition"
@@ -174,6 +185,17 @@ export function ArchiveCard({
       {/* Selected indicator */}
       {isSelected && (
         <div className="absolute left-0 top-3 bottom-3 w-0.5 bg-primary-500 rounded-r" />
+      )}
+      {showEditDialog && (
+        <EditArchiveDialog
+          initialNote={archive.note || ''}
+          initialTags={archive.tags}
+          onConfirm={async (note, tags) => {
+            await updateArchive(archive.id, note, tags);
+            setShowEditDialog(false);
+          }}
+          onCancel={() => setShowEditDialog(false)}
+        />
       )}
     </div>
   );
