@@ -287,11 +287,16 @@ pub async fn update_config(
     state: State<'_, AppState>,
     new_config: AppConfig,
 ) -> Result<(), AppError> {
+    // 配置验证：关键字段不能为零
+    if new_config.storage.chunk_size == 0 {
+        return Err(AppError::Other("chunk_size 不能为 0".to_string()));
+    }
+
+    // 先保存到磁盘，失败则不更新内存状态，保证一致性
+    new_config.save(&state.data_dir)?;
+
     let mut config = state.config.lock().unwrap_or_else(|e| e.into_inner());
     *config = new_config;
-
-    // 保存到磁盘
-    config.save(&state.data_dir)?;
 
     // 如果 watcher 配置变了，应用到 watcher
     let mut watcher = state.watcher.lock().unwrap_or_else(|e| e.into_inner());

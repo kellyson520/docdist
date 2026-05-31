@@ -112,11 +112,11 @@ export default function App() {
   }, [handleViewChange]);
 
   const navItems = [
-    { id: 'list' as View, label: '存档管理', icon: FolderOpen, shortcut: '⌘1' },
-    { id: 'timeline' as View, label: '时间轴', icon: Clock, shortcut: '⌘2' },
-    { id: 'diff' as View, label: '版本对比', icon: GitCompare, shortcut: '⌘3' },
-    { id: 'enhanced-diff' as View, label: '增强对比', icon: GitCompare, shortcut: '⌘5' },
-    { id: 'graph' as View, label: '迭代图谱', icon: GitBranch, shortcut: '⌘4' },
+    { id: 'list' as View, label: '存档管理', icon: FolderOpen, shortcut: 'Ctrl+1' },
+    { id: 'timeline' as View, label: '时间轴', icon: Clock, shortcut: 'Ctrl+2' },
+    { id: 'diff' as View, label: '版本对比', icon: GitCompare, shortcut: 'Ctrl+3' },
+    { id: 'enhanced-diff' as View, label: '增强对比', icon: GitCompare, shortcut: 'Ctrl+5' },
+    { id: 'graph' as View, label: '迭代图谱', icon: GitBranch, shortcut: 'Ctrl+4' },
   ];
 
   // Mini mode
@@ -156,6 +156,7 @@ export default function App() {
               <button
                 key={id}
                 onClick={() => handleViewChange(id)}
+                aria-current={isActive ? 'page' : undefined}
                 className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-all duration-150 group ${
                   isActive
                     ? 'bg-primary-50 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400 font-medium shadow-sm'
@@ -198,6 +199,7 @@ export default function App() {
             <div className="flex items-center gap-1">
               <button
                 onClick={() => setShowLogViewer(true)}
+                aria-label="日志"
                 className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition"
                 title="日志 (⌘L)"
               >
@@ -205,6 +207,7 @@ export default function App() {
               </button>
               <button
                 onClick={() => setShowSettings(true)}
+                aria-label="设置"
                 className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition"
                 title="设置 (⌘,)"
               >
@@ -212,6 +215,7 @@ export default function App() {
               </button>
               <button
                 onClick={() => setIsMini(true)}
+                aria-label="迷你模式"
                 className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition"
                 title="迷你模式"
               >

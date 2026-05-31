@@ -198,7 +198,7 @@ describe('ArchiveCard', () => {
     // 先点击更多按钮（MoreVertical）打开菜单
     const moreBtn = container.querySelector('button:not([title])')!
     // 找到 MoreVertical 按钮 — 它是 actions 区域最后一个没有 title 的按钮
-    const actionButtons = container.querySelectorAll('.opacity-0 button')
+    const actionButtons = container.querySelectorAll('[class*="opacity"] button')
     const moreButton = actionButtons[actionButtons.length - 1]
     fireEvent.click(moreButton)
 

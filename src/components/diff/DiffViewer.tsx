@@ -134,6 +134,7 @@ export function DiffViewer() {
           {/* Close */}
           <button
             onClick={clearDiff}
+            aria-label="关闭对比"
             className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition"
           >
             <X className="w-4 h-4 text-gray-400 dark:text-gray-500" />
@@ -161,7 +162,7 @@ export function DiffViewer() {
 
           {/* Progress Bar */}
           {totalChanges > 0 && (
-            <div className="flex-1 h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+            <div role="progressbar" aria-valuenow={stats.additions} aria-valuemin={0} aria-valuemax={totalChanges} aria-label={`变更进度: ${stats.additions} 新增, ${stats.deletions} 删除`} className="flex-1 h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
               <div
                 className="h-full bg-green-500 transition-all"
                 style={{ width: `${(stats.additions / totalChanges) * 100}%` }}
@@ -185,6 +186,7 @@ export function DiffViewer() {
               {/* Hunk Header */}
               <button
                 onClick={() => toggleHunk(hunkIdx)}
+                aria-expanded={isExpanded}
                 className="w-full px-4 py-1.5 bg-gray-50 dark:bg-gray-800/50 text-gray-600 dark:text-gray-400 text-xs border-y border-gray-200 dark:border-gray-700 flex items-center justify-between hover:bg-gray-100 dark:hover:bg-gray-700 transition"
               >
                 <span>

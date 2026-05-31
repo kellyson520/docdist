@@ -7,6 +7,7 @@
  */
 export function formatRelativeTime(dateStr: string): string {
   const date = new Date(dateStr);
+  if (isNaN(date.getTime())) return '无效日期';
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();
   const diffSecs = Math.floor(diffMs / 1000);
@@ -32,6 +33,7 @@ export function formatRelativeTime(dateStr: string): string {
  */
 export function formatAbsoluteTime(dateStr: string): string {
   const date = new Date(dateStr);
+  if (isNaN(date.getTime())) return '无效日期';
   return date.toLocaleDateString('zh-CN', {
     year: 'numeric',
     month: '2-digit',
@@ -47,6 +49,7 @@ export function formatAbsoluteTime(dateStr: string): string {
  */
 export function formatDateOnly(dateStr: string): string {
   const date = new Date(dateStr);
+  if (isNaN(date.getTime())) return '无效日期';
   return date.toLocaleDateString('zh-CN', {
     year: 'numeric',
     month: '2-digit',
@@ -59,6 +62,7 @@ export function formatDateOnly(dateStr: string): string {
  */
 export function formatTimeOnly(dateStr: string): string {
   const date = new Date(dateStr);
+  if (isNaN(date.getTime())) return '无效日期';
   return date.toLocaleTimeString('zh-CN', {
     hour: '2-digit',
     minute: '2-digit',
@@ -71,6 +75,7 @@ export function formatTimeOnly(dateStr: string): string {
  */
 export function isToday(dateStr: string): boolean {
   const date = new Date(dateStr);
+  if (isNaN(date.getTime())) return false;
   const now = new Date();
   return (
     date.getFullYear() === now.getFullYear() &&
@@ -84,6 +89,7 @@ export function isToday(dateStr: string): boolean {
  */
 export function isYesterday(dateStr: string): boolean {
   const date = new Date(dateStr);
+  if (isNaN(date.getTime())) return false;
   const yesterday = new Date();
   yesterday.setDate(yesterday.getDate() - 1);
   return (

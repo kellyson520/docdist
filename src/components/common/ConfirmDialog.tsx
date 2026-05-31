@@ -1,5 +1,13 @@
 import { useEffect, useRef, useCallback } from 'react';
 
+function getFocusableElements(container: HTMLElement): HTMLElement[] {
+  return Array.from(
+    container.querySelectorAll<HTMLElement>(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+    ),
+  );
+}
+
 interface ConfirmDialogProps {
   open: boolean;
   title: string;
@@ -17,6 +25,23 @@ export function ConfirmDialog({ open, title, message, onConfirm, onCancel }: Con
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     if (e.key === 'Escape' && open) {
       onCancelRef.current();
+    }
+    if (e.key === 'Tab' && open && dialogRef.current) {
+      const focusable = getFocusableElements(dialogRef.current);
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey) {
+        if (document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        }
+      } else {
+        if (document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
     }
   }, [open]);
 

@@ -398,12 +398,21 @@ impl ArchiveService {
 
     /// 删除存档 — 事务保护
     pub fn delete_archive(&self, archive_id: &str) -> Result<(), AppError> {
-        // 先获取该存档的 chunks
-        let chunk_hashes = db::get_archive_chunks(&self.pool, archive_id)?;
-
-        // 事务保护：删除关联 + 删除记录 + 减少引用计数
+        // 事务保护：读取 chunks + 删除关联 + 删除记录 + 减少引用计数
         let mut conn = self.pool.get()?;
         let tx = conn.transaction()?;
+
+        // 在事务内读取 chunk_hashes，避免 TOCTOU 竞态
+        let mut stmt = tx.prepare(
+            "SELECT chunk_hash FROM archive_chunks WHERE archive_id = ?1",
+        )?;
+        let chunk_hashes: Vec<String> = stmt
+            .query_map(rusqlite::params![archive_id], |row| {
+                row.get::<_, String>(0)
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+        drop(stmt);
 
         tx.execute(
             "DELETE FROM archive_chunks WHERE archive_id = ?1",

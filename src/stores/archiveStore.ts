@@ -137,7 +137,9 @@ export interface ArchiveState {
 }
 
 // ==================== 竞态请求ID ====================
-let _fetchRequestId = 0;
+// 独立计数器：避免 fetchArchives 和 fetchArchivesPaginated 互相丢弃响应
+let _fetchArchivesRequestId = 0;
+let _fetchPaginatedRequestId = 0;
 
 // ==================== Store ====================
 
@@ -166,23 +168,23 @@ export const useArchiveStore = create<ArchiveState>((set, get) => ({
   // ==================== 存档 CRUD ====================
 
   fetchArchives: async (filePath?: string, search?: string) => {
-    const requestId = ++_fetchRequestId;
+    const requestId = ++_fetchArchivesRequestId;
     set({ loading: true, error: null, page: 1, hasMore: false, totalCount: 0 });
     try {
       const archives = await invoke<Archive[]>('list_archives', {
         filePath: filePath || null,
         search: search || null,
       });
-      if (requestId !== _fetchRequestId) return; // 过期响应，丢弃
+      if (requestId !== _fetchArchivesRequestId) return;
       set({ archives, loading: false });
     } catch (e: unknown) {
-      if (requestId !== _fetchRequestId) return;
+      if (requestId !== _fetchArchivesRequestId) return;
       set({ archives: [], error: e instanceof Error ? e.message : String(e), loading: false });
     }
   },
 
   fetchArchivesPaginated: async (page = 1, filePath?: string, search?: string) => {
-    const requestId = ++_fetchRequestId;
+    const requestId = ++_fetchPaginatedRequestId;
     const { pageSize } = get();
     set({ loading: true, error: null });
     try {
@@ -192,7 +194,7 @@ export const useArchiveStore = create<ArchiveState>((set, get) => ({
         page,
         pageSize,
       });
-      if (requestId !== _fetchRequestId) return;
+      if (requestId !== _fetchPaginatedRequestId) return;
       set({
         archives,
         page,
@@ -201,7 +203,7 @@ export const useArchiveStore = create<ArchiveState>((set, get) => ({
         loading: false,
       });
     } catch (e: unknown) {
-      if (requestId !== _fetchRequestId) return;
+      if (requestId !== _fetchPaginatedRequestId) return;
       set({ archives: [], error: e instanceof Error ? e.message : String(e), loading: false });
     }
   },

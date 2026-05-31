@@ -74,6 +74,11 @@ function ArchiveCardInner({
   return (
     <div
       onClick={onSelect}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect(); } }}
+      role="button"
+      tabIndex={0}
+      aria-label={`存档: ${archive.file_name}`}
+      aria-pressed={isSelected}
       className={`group relative bg-white dark:bg-gray-800 rounded-xl border transition-all duration-150 cursor-pointer card-hover ${
         isSelected
           ? 'border-primary-300 dark:border-primary-600 ring-2 ring-primary-100 dark:ring-primary-900/30 shadow-sm'
@@ -87,6 +92,8 @@ function ArchiveCardInner({
           {onToggleSelect && (
             <button
               onClick={(e) => { e.stopPropagation(); onToggleSelect(); }}
+              aria-label={isMultiSelected ? '取消选择' : '选择'}
+              aria-pressed={isMultiSelected}
               className="mt-0.5 flex-shrink-0"
             >
               {isMultiSelected ? (
@@ -113,9 +120,10 @@ function ArchiveCardInner({
           </div>
 
           {/* Actions */}
-          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <div className="flex items-center gap-1 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
             <button
               onClick={(e) => { e.stopPropagation(); setShowEditDialog(true); }}
+              aria-label="编辑"
               className="p-1.5 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-lg transition"
               title="编辑"
             >
@@ -123,6 +131,7 @@ function ArchiveCardInner({
             </button>
             <button
               onClick={(e) => { e.stopPropagation(); onRestore(); }}
+              aria-label="恢复"
               className="p-1.5 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-lg transition"
               title="恢复"
             >
@@ -130,6 +139,7 @@ function ArchiveCardInner({
             </button>
             <button
               onClick={(e) => { e.stopPropagation(); onCompare(); }}
+              aria-label="对比"
               className="p-1.5 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition"
               title="对比"
             >
@@ -138,13 +148,17 @@ function ArchiveCardInner({
             <div className="relative" ref={menuRef}>
               <button
                 onClick={(e) => { e.stopPropagation(); setShowMenu(!showMenu); }}
+                aria-label="更多操作"
+                aria-haspopup="menu"
+                aria-expanded={showMenu}
                 className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition"
               >
                 <MoreVertical className="w-3.5 h-3.5 text-gray-400" />
               </button>
               {showMenu && (
-                <div className="absolute right-0 top-full mt-1 w-36 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg py-1 z-10 animate-scale-in">
+                <div role="menu" className="absolute right-0 top-full mt-1 w-36 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg py-1 z-10 animate-scale-in">
                   <button
+                    role="menuitem"
                     onClick={(e) => { e.stopPropagation(); onDelete(); setShowMenu(false); }}
                     className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition"
                   >

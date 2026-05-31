@@ -75,7 +75,9 @@ pub fn init_database(
         CREATE INDEX IF NOT EXISTS idx_archives_parent
             ON archives(parent_id);
         CREATE INDEX IF NOT EXISTS idx_archives_created
-            ON archives(created_at DESC);",
+            ON archives(created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_archive_chunks_hash
+            ON archive_chunks(chunk_hash);",
     )?;
 
     Ok(pool)

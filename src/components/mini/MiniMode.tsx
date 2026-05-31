@@ -27,6 +27,7 @@ export function MiniMode({ onExpand }: { onExpand: () => void }) {
         </div>
         <button
           onClick={onExpand}
+          aria-label="展开完整模式"
           className="p-1 hover:bg-white/20 rounded transition"
           title="展开完整模式"
         >
@@ -49,6 +50,7 @@ export function MiniMode({ onExpand }: { onExpand: () => void }) {
       <div className="p-3">
         <button
           onClick={() => { setShowRecent(!showRecent); if (!showRecent) fetchArchives(); }}
+          aria-expanded={showRecent}
           className="flex items-center justify-between w-full text-sm text-gray-600 dark:text-gray-300 hover:text-gray-800 dark:hover:text-gray-100"
         >
           <span className="flex items-center gap-1.5">
@@ -74,7 +76,8 @@ export function MiniMode({ onExpand }: { onExpand: () => void }) {
                   </div>
                   <button
                     onClick={() => restoreArchive(archive.id)}
-                    className="p-1 opacity-0 group-hover:opacity-100 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition"
+                    className="p-2.5 sm:p-1 sm:opacity-0 sm:group-hover:opacity-100 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition min-w-[44px] min-h-[44px] flex items-center justify-center"
+                    aria-label={`恢复 ${archive.file_name}`}
                     title="恢复"
                   >
                     <RotateCcw className="w-3 h-3 text-gray-500 dark:text-gray-400" />

@@ -3,6 +3,7 @@ use std::path::Path;
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct WatcherConfig {
     /// 是否启用文件监控
     pub enabled: bool,
@@ -40,6 +41,7 @@ impl Default for WatcherConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct StorageConfig {
     /// 分块大小（字节）
     pub chunk_size: usize,
@@ -69,6 +71,7 @@ impl Default for StorageConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct LogConfig {
     /// 日志级别: trace, debug, info, warn, error
     pub level: String,
@@ -92,6 +95,7 @@ impl Default for LogConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct AppConfig {
     /// 监控配置
     pub watcher: WatcherConfig,
