@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useArchiveStore } from './stores/archiveStore';
 import { ArchiveList } from './components/archive/ArchiveList';
 import { TimelineView } from './components/timeline/TimelineView';
@@ -10,6 +10,7 @@ import { WatcherPanel } from './components/watcher/WatcherPanel';
 import { SettingsPanel } from './components/settings/SettingsPanel';
 import { ToastContainer } from './components/common/ToastContainer';
 import { LogViewer } from './components/common/LogViewer';
+import { formatFileSize } from './utils/format';
 import { FolderOpen, Clock, GitCompare, GitBranch, Minimize2, Settings, Terminal } from 'lucide-react';
 import './styles/themes.css';
 import './styles/animations.css';
@@ -17,11 +18,16 @@ import './styles/animations.css';
 type View = 'list' | 'timeline' | 'diff' | 'graph';
 
 export default function App() {
-  const { fetchArchives, fetchStatistics, statistics, setupEventListeners, setView } = useArchiveStore();
+  const { fetchArchives, fetchStatistics, statistics, setupEventListeners, view, setView } = useArchiveStore();
   const [isMini, setIsMini] = useState(false);
-  const [activeView, setActiveView] = useState<View>('list');
   const [showSettings, setShowSettings] = useState(false);
   const [showLogViewer, setShowLogViewer] = useState(false);
+
+  // Use refs for latest state in event handlers to avoid re-registering listeners
+  const showSettingsRef = useRef(showSettings);
+  const showLogViewerRef = useRef(showLogViewer);
+  showSettingsRef.current = showSettings;
+  showLogViewerRef.current = showLogViewer;
 
   useEffect(() => {
     fetchArchives();
@@ -34,13 +40,12 @@ export default function App() {
     return cleanup;
   }, [setupEventListeners]);
 
-  // 同步 view 到 store
-  const handleViewChange = useCallback((view: View) => {
-    setActiveView(view);
-    setView(view as 'list' | 'timeline' | 'graph' | 'mini');
+  // 统一使用 store 的 view 状态
+  const handleViewChange = useCallback((newView: View) => {
+    setView(newView as 'list' | 'timeline' | 'diff' | 'graph' | 'mini');
   }, [setView]);
 
-  // 全局键盘快捷键
+  // 全局键盘快捷键 — 使用 ref 避免频繁重新注册
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Ctrl/Cmd + 数字切换视图
@@ -74,14 +79,14 @@ export default function App() {
       }
       // Escape 关闭弹窗
       if (e.key === 'Escape') {
-        if (showSettings) setShowSettings(false);
-        else if (showLogViewer) setShowLogViewer(false);
+        if (showSettingsRef.current) setShowSettings(false);
+        else if (showLogViewerRef.current) setShowLogViewer(false);
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleViewChange, showSettings, showLogViewer]);
+  }, [handleViewChange]);
 
   const navItems = [
     { id: 'list' as View, label: '存档管理', icon: FolderOpen, shortcut: '⌘1' },
@@ -124,7 +129,7 @@ export default function App() {
                 key={id}
                 onClick={() => handleViewChange(id)}
                 className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-all duration-150 group ${
-                  activeView === id
+                  view === id
                     ? 'bg-primary-50 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400 font-medium shadow-sm'
                     : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 hover:text-gray-800 dark:hover:text-gray-200'
                 }`}
@@ -152,7 +157,7 @@ export default function App() {
                 </p>
                 <p className="flex items-center gap-1.5">
                   <span className="w-1.5 h-1.5 rounded-full bg-purple-400" />
-                  {formatBytes(statistics.total_size)}
+                  {formatFileSize(statistics.total_size)}
                 </p>
               </div>
             </div>
@@ -190,10 +195,10 @@ export default function App() {
         {/* Main content */}
         <div className="flex-1 flex flex-col overflow-hidden">
           <div className="flex-1 overflow-auto p-6 animate-fade-in">
-            {activeView === 'list' && <ArchiveList />}
-            {activeView === 'timeline' && <TimelineView />}
-            {activeView === 'diff' && <DiffViewer />}
-            {activeView === 'graph' && <IterationGraph />}
+            {view === 'list' && <ArchiveList />}
+            {view === 'timeline' && <TimelineView />}
+            {view === 'diff' && <DiffViewer />}
+            {view === 'graph' && <IterationGraph />}
           </div>
         </div>
 
@@ -211,12 +216,4 @@ export default function App() {
       <ToastContainer />
     </>
   );
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
 }

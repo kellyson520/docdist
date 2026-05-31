@@ -14,7 +14,7 @@ export function ArchiveList() {
   const {
     archives, selectedArchive, loading, searchQuery,
     selectedIds, page, hasMore,
-    fetchArchives, createArchive, restoreArchive, deleteArchive,
+    fetchArchives, fetchArchivesPaginated, createArchive, restoreArchive, deleteArchive,
     deleteArchivesBatch, compareArchives, selectArchive, setSearchQuery,
     toggleSelect, selectAll, clearSelection,
   } = useArchiveStore();
@@ -152,7 +152,7 @@ export function ArchiveList() {
         <div className="px-4 py-3 border-t border-gray-100 dark:border-gray-700 flex items-center justify-between">
           <button
             disabled={page <= 1}
-            onClick={() => fetchArchives(undefined, searchQuery)}
+            onClick={() => fetchArchivesPaginated(page - 1, undefined, searchQuery)}
             className="flex items-center gap-1 px-3 py-1.5 text-xs text-gray-500 hover:bg-gray-100 rounded-lg transition disabled:opacity-30"
           >
             <ChevronLeft className="w-3.5 h-3.5" />
@@ -161,7 +161,7 @@ export function ArchiveList() {
           <span className="text-xs text-gray-400">第 {page} 页</span>
           <button
             disabled={!hasMore}
-            onClick={() => fetchArchives(undefined, searchQuery)}
+            onClick={() => fetchArchivesPaginated(page + 1, undefined, searchQuery)}
             className="flex items-center gap-1 px-3 py-1.5 text-xs text-gray-500 hover:bg-gray-100 rounded-lg transition disabled:opacity-30"
           >
             下一页

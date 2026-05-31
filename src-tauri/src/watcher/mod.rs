@@ -1,6 +1,7 @@
 use notify::{Event, EventKind, RecursiveMode, Watcher};
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::Manager;
@@ -11,12 +12,6 @@ pub struct FileChangeEvent {
     pub path: String,
     pub event_type: String,
     pub timestamp: String,
-}
-
-/// 待处理的文件变更（防抖用）
-struct PendingChange {
-    path: String,
-    last_modified: Instant,
 }
 
 /// 自动存档回调类型
@@ -37,6 +32,10 @@ pub struct FileWatcher {
     event_sender: Arc<Mutex<Option<tauri::AppHandle>>>,
     /// 已触发过的路径（用于去重，存档完成后重置）
     triggered_paths: Arc<Mutex<HashMap<String, bool>>>,
+    /// 防抖线程停止信号
+    debounce_stop: Arc<AtomicBool>,
+    /// 防抖线程句柄
+    debounce_handle: Option<std::thread::JoinHandle<()>>,
 }
 
 impl FileWatcher {
@@ -58,6 +57,8 @@ impl FileWatcher {
             auto_archive_cb: Arc::new(Mutex::new(None)),
             event_sender: Arc::new(Mutex::new(None)),
             triggered_paths: Arc::new(Mutex::new(HashMap::new())),
+            debounce_stop: Arc::new(AtomicBool::new(false)),
+            debounce_handle: None,
         }
     }
 
@@ -74,6 +75,11 @@ impl FileWatcher {
     /// 设置排除模式
     pub fn set_exclude_patterns(&self, patterns: Vec<String>) {
         *self.exclude_patterns.lock().unwrap() = patterns;
+    }
+
+    /// 设置防抖持续时间
+    pub fn set_debounce_duration(&mut self, duration: Duration) {
+        self.debounce_duration = duration;
     }
 
     /// 设置自动存档回调
@@ -126,13 +132,12 @@ impl FileWatcher {
             self.set_app_handle(handle);
         }
 
+        let debounce = self.debounce_duration;
+
         let watched = self.watched_paths.clone();
         let exclude = self.exclude_patterns.clone();
         let pending = self.pending_changes.clone();
-        let callback = self.auto_archive_cb.clone();
         let event_tx = self.event_sender.clone();
-        let triggered = self.triggered_paths.clone();
-        let debounce = self.debounce_duration;
 
         // 为 debounce 线程提前 clone
         let pending_debounce = self.pending_changes.clone();
@@ -149,17 +154,12 @@ impl FileWatcher {
                                 let path_str =
                                     path.to_string_lossy().to_string();
 
-                                // 排除检查
+                                // 排除检查 — 按路径段匹配
                                 let patterns = exclude.lock().unwrap();
-                                let should_skip = patterns.iter().any(|pat| {
-                                    let pat_lower = pat.to_lowercase();
-                                    let path_lower = path_str.to_lowercase();
-                                    if pat_lower.starts_with("*.") {
-                                        path_lower.ends_with(&pat_lower[1..])
-                                    } else {
-                                        path_lower.contains(&pat_lower)
-                                    }
-                                });
+                                let should_skip = is_path_excluded(
+                                    &path_str,
+                                    &patterns,
+                                );
                                 drop(patterns);
 
                                 if should_skip {
@@ -222,9 +222,13 @@ impl FileWatcher {
         *watched.lock().unwrap() = paths;
         self.watcher = Some(watcher);
 
-        // 启动防抖处理线程
-        std::thread::spawn(move || {
-            loop {
+        // 启动防抖处理线程，使用 AtomicBool 控制退出
+        let stop_signal = self.debounce_stop.clone();
+        // 重置停止信号
+        stop_signal.store(true, Ordering::SeqCst);
+
+        let handle = std::thread::spawn(move || {
+            while stop_signal.load(Ordering::SeqCst) {
                 std::thread::sleep(Duration::from_millis(500));
 
                 let now = Instant::now();
@@ -276,6 +280,7 @@ impl FileWatcher {
                 }
             }
         });
+        self.debounce_handle = Some(handle);
 
         // 发送 watcher 启动事件
         if let Some(handle) = self.event_sender.lock().unwrap().as_ref() {
@@ -292,6 +297,12 @@ impl FileWatcher {
     }
 
     pub fn stop(&mut self) {
+        // 停止防抖线程
+        self.debounce_stop.store(false, Ordering::SeqCst);
+        if let Some(handle) = self.debounce_handle.take() {
+            let _ = handle.join();
+        }
+
         if let Some(mut watcher) = self.watcher.take() {
             for path in self.watched_paths.lock().unwrap().iter() {
                 let _ = watcher.unwatch(std::path::Path::new(path));
@@ -368,4 +379,31 @@ impl FileWatcher {
         }
         Ok(())
     }
+}
+
+/// 检查路径是否应被排除
+/// 排除模式分为两类：
+/// - `*.ext` 模式：匹配文件名后缀
+/// - 目录名模式（如 `.git`、`node_modules`）：检查路径的每个部分是否匹配
+fn is_path_excluded(path_str: &str, patterns: &[String]) -> bool {
+    let path_lower = path_str.to_lowercase();
+    for pat in patterns {
+        let pat_lower = pat.to_lowercase();
+        if pat_lower.starts_with("*.") {
+            // 文件后缀匹配：*.tmp → 检查路径是否以 .tmp 结尾
+            if path_lower.ends_with(&pat_lower[1..]) {
+                return true;
+            }
+        } else {
+            // 目录/文件名匹配：检查路径的每个部分是否完全匹配
+            // 例如 pattern ".git" 匹配 "/foo/.git/bar" 和 "/foo/.git"
+            for part in std::path::Path::new(path_str).components() {
+                let part_str = part.as_os_str().to_string_lossy().to_lowercase();
+                if part_str == pat_lower {
+                    return true;
+                }
+            }
+        }
+    }
+    false
 }

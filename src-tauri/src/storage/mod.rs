@@ -1,25 +1,37 @@
 use std::path::Path;
 use xxhash_rust::xxh3::xxh3_64;
 
-const CHUNK_SIZE: usize = 4096; // 4KB
-
 pub fn compute_hash(data: &[u8]) -> String {
     format!("{:016x}", xxh3_64(data))
 }
 
-/// 存储文件到分块存储，返回 (chunk_hashes, file_size, file_checksum)
+/// 辅助：从 hash 取前两个字符作为子目录名，hash 长度不足时返回错误
+fn hash_prefix(hash: &str) -> Result<&str, crate::error::AppError> {
+    if hash.len() < 2 {
+        return Err(crate::error::AppError::Other(format!(
+            "chunk hash too short for directory sharding: '{}'",
+            hash
+        )));
+    }
+    Ok(&hash[..2])
+}
+
+/// 存储文件到分块存储，返回 (chunk_hashes, chunk_sizes, file_size, file_checksum)
 pub fn store_file(
     base_dir: &Path,
     file_path: &Path,
-) -> Result<(Vec<String>, u64, String), crate::error::AppError> {
+    chunk_size: usize,
+) -> Result<(Vec<String>, Vec<usize>, u64, String), crate::error::AppError> {
     let content = std::fs::read(file_path)?;
     let file_size = content.len() as u64;
     let file_checksum = compute_hash(&content);
     let mut chunk_hashes = Vec::new();
+    let mut chunk_sizes = Vec::new();
 
-    for chunk in content.chunks(CHUNK_SIZE) {
+    for chunk in content.chunks(chunk_size) {
         let hash = compute_hash(chunk);
-        let chunk_dir = base_dir.join(&hash[..2]);
+        let prefix = hash_prefix(&hash)?;
+        let chunk_dir = base_dir.join(prefix);
         let chunk_path = chunk_dir.join(&hash);
 
         if !chunk_path.exists() {
@@ -28,9 +40,10 @@ pub fn store_file(
         }
 
         chunk_hashes.push(hash);
+        chunk_sizes.push(chunk.len());
     }
 
-    Ok((chunk_hashes, file_size, file_checksum))
+    Ok((chunk_hashes, chunk_sizes, file_size, file_checksum))
 }
 
 /// 从分块存储恢复文件
@@ -42,7 +55,8 @@ pub fn restore_file(
     let mut content = Vec::new();
 
     for hash in chunk_hashes {
-        let chunk_path = base_dir.join(&hash[..2]).join(hash);
+        let prefix = hash_prefix(hash)?;
+        let chunk_path = base_dir.join(prefix).join(hash);
         if !chunk_path.exists() {
             return Err(crate::error::AppError::Other(format!(
                 "分块不存在: {}",
@@ -145,7 +159,8 @@ pub fn verify_chunk(
     base_dir: &Path,
     hash: &str,
 ) -> Result<bool, crate::error::AppError> {
-    let chunk_path = base_dir.join(&hash[..2]).join(hash);
+    let prefix = hash_prefix(hash)?;
+    let chunk_path = base_dir.join(prefix).join(hash);
     if !chunk_path.exists() {
         return Ok(false);
     }

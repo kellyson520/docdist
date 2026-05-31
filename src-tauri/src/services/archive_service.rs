@@ -7,16 +7,21 @@ use std::path::Path;
 pub struct ArchiveService {
     pool: DbPool,
     chunks_dir: std::path::PathBuf,
+    chunk_size: usize,
 }
 
 impl ArchiveService {
-    pub fn new(pool: DbPool, data_dir: &Path) -> Self {
+    pub fn new(pool: DbPool, data_dir: &Path, chunk_size: usize) -> Self {
         let chunks_dir = data_dir.join("chunks");
         std::fs::create_dir_all(&chunks_dir).ok();
-        Self { pool, chunks_dir }
+        Self {
+            pool,
+            chunks_dir,
+            chunk_size,
+        }
     }
 
-    /// 创建存档 — 核心功能
+    /// 创建存档 — 核心功能（事务保护）
     pub fn create_archive(
         &self,
         file_path: &str,
@@ -29,9 +34,9 @@ impl ArchiveService {
             return Err(AppError::Other("文件不存在".to_string()));
         }
 
-        // 分块存储文件
-        let (chunk_hashes, file_size, checksum) =
-            storage::store_file(&self.chunks_dir, path)?;
+        // 分块存储文件（使用配置的 chunk_size）
+        let (chunk_hashes, chunk_sizes, file_size, checksum) =
+            storage::store_file(&self.chunks_dir, path, self.chunk_size)?;
 
         let file_name = path
             .file_name()
@@ -62,16 +67,52 @@ impl ArchiveService {
                 .to_string(),
         };
 
-        // 保存 chunk 信息并更新 ref_count
-        let chunk_infos: Vec<(String, usize)> =
-            chunk_hashes.iter().map(|h| (h.clone(), 4096)).collect();
+        // 事务保护：chunk upsert + archive_chunks 插入 + archive 插入
+        let conn = self.pool.get()?;
+        let tx = conn.transaction()?;
 
-        for (hash, size) in &chunk_infos {
-            db::upsert_chunk(&self.pool, hash, *size)?;
+        for (i, hash) in chunk_hashes.iter().enumerate() {
+            let size = chunk_sizes[i];
+            let storage_path = format!("{}/{}", &hash[..2], hash);
+            tx.execute(
+                "INSERT INTO chunks (hash, size, ref_count, storage_path) \
+                 VALUES (?1, ?2, 1, ?3) \
+                 ON CONFLICT(hash) DO UPDATE SET ref_count = ref_count + 1",
+                rusqlite::params![hash, size as i64, storage_path],
+            )?;
         }
 
-        db::insert_archive_chunks(&self.pool, &archive.id, &chunk_infos)?;
-        db::insert_archive(&self.pool, &archive)?;
+        for (i, hash) in chunk_hashes.iter().enumerate() {
+            tx.execute(
+                "INSERT OR IGNORE INTO archive_chunks \
+                 (archive_id, chunk_hash, chunk_index) \
+                 VALUES (?1, ?2, ?3)",
+                rusqlite::params![archive.id, hash, i as i64],
+            )?;
+        }
+
+        let tags_json = serde_json::to_string(&archive.tags)?;
+        tx.execute(
+            "INSERT INTO archives (\
+                 id, file_path, file_name, file_size, \
+                 checksum, chunk_count, note, tags, \
+                 parent_id, created_at\
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            rusqlite::params![
+                archive.id,
+                archive.file_path,
+                archive.file_name,
+                archive.file_size,
+                archive.checksum,
+                archive.chunk_count,
+                archive.note,
+                tags_json,
+                archive.parent_id,
+                archive.created_at
+            ],
+        )?;
+
+        tx.commit()?;
 
         tracing::info!(
             "Archive created: {} ({}, {} chunks)",
@@ -132,36 +173,83 @@ impl ArchiveService {
         )
     }
 
-    /// 删除存档 — 同时清理 ref_count
+    /// 删除存档 — 事务保护
     pub fn delete_archive(&self, archive_id: &str) -> Result<(), AppError> {
         // 先获取该存档的 chunks
         let chunk_hashes = db::get_archive_chunks(&self.pool, archive_id)?;
 
-        // 从 archive_chunks 表删除关联
-        db::delete_archive_chunks(&self.pool, archive_id)?;
+        // 事务保护：删除关联 + 删除记录 + 减少引用计数
+        let conn = self.pool.get()?;
+        let tx = conn.transaction()?;
 
-        // 删除存档记录
-        db::delete_archive_record(&self.pool, archive_id)?;
+        tx.execute(
+            "DELETE FROM archive_chunks WHERE archive_id = ?1",
+            rusqlite::params![archive_id],
+        )?;
+        tx.execute(
+            "DELETE FROM archives WHERE id = ?1",
+            rusqlite::params![archive_id],
+        )?;
 
-        // 减少 chunk 引用计数
         for hash in &chunk_hashes {
-            db::decrement_chunk_ref(&self.pool, hash)?;
+            tx.execute(
+                "UPDATE chunks SET ref_count = MAX(0, ref_count - 1) WHERE hash = ?1",
+                rusqlite::params![hash],
+            )?;
         }
+
+        tx.commit()?;
 
         tracing::info!("Archive deleted: {}", archive_id);
         Ok(())
     }
 
-    /// 批量删除存档
+    /// 批量删除存档（单个事务保护所有删除操作）
     pub fn delete_archives_batch(
         &self,
         ids: &[String],
     ) -> Result<usize, AppError> {
+        let conn = self.pool.get()?;
+        let tx = conn.transaction()?;
+
         let mut total_deleted = 0;
         for id in ids {
-            self.delete_archive(id)?;
-            total_deleted += 1;
+            // 查询该存档关联的 chunk hashes
+            let chunk_hashes: Vec<String> = {
+                let mut stmt = tx.prepare(
+                    "SELECT chunk_hash FROM archive_chunks \
+                     WHERE archive_id = ?1 ORDER BY chunk_index",
+                )?;
+                let hashes: Vec<String> = stmt
+                    .query_map(rusqlite::params![id], |row| {
+                        row.get::<_, String>(0)
+                    })?
+                    .map(|r| r.map_err(crate::error::AppError::Db))
+                    .collect::<Result<Vec<_>, _>>()?;
+            };
+
+            tx.execute(
+                "DELETE FROM archive_chunks WHERE archive_id = ?1",
+                rusqlite::params![id],
+            )?;
+            let deleted =
+                tx.execute(
+                    "DELETE FROM archives WHERE id = ?1",
+                    rusqlite::params![id],
+                )?;
+
+            for hash in &chunk_hashes {
+                tx.execute(
+                    "UPDATE chunks SET ref_count = MAX(0, ref_count - 1) \
+                     WHERE hash = ?1",
+                    rusqlite::params![hash],
+                )?;
+            }
+
+            total_deleted += deleted;
         }
+
+        tx.commit()?;
         Ok(total_deleted)
     }
 
@@ -212,8 +300,10 @@ impl ArchiveService {
 
         // 添加存储使用信息
         let storage_usage = storage::get_storage_usage(&self.chunks_dir)?;
-        stats["storage_chunks"] = serde_json::json!(storage_usage.total_chunks);
-        stats["storage_bytes"] = serde_json::json!(storage_usage.total_bytes);
+        stats["storage_chunks"] =
+            serde_json::json!(storage_usage.total_chunks);
+        stats["storage_bytes"] =
+            serde_json::json!(storage_usage.total_bytes);
 
         Ok(stats)
     }
@@ -246,6 +336,10 @@ impl ArchiveService {
     ) -> Result<String, AppError> {
         let mut content = Vec::new();
         for hash in chunk_hashes {
+            if hash.len() < 2 {
+                tracing::warn!("Skipping chunk with invalid hash: {}", hash);
+                continue;
+            }
             let chunk_path = self.chunks_dir.join(&hash[..2]).join(hash);
             if chunk_path.exists() {
                 let data = std::fs::read(&chunk_path)?;

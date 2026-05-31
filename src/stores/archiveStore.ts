@@ -67,7 +67,7 @@ interface ArchiveState {
   statistics: Statistics | null;
   loading: boolean;
   error: string | null;
-  view: 'list' | 'timeline' | 'graph' | 'mini';
+  view: 'list' | 'timeline' | 'diff' | 'graph' | 'mini';
   searchQuery: string;
 
   // 分页

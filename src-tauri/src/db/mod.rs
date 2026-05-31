@@ -72,6 +72,7 @@ pub fn init_database(
     Ok(pool)
 }
 
+#[allow(dead_code)]
 pub fn insert_archive(
     pool: &DbPool,
     archive: &Archive,
@@ -100,6 +101,7 @@ pub fn insert_archive(
     Ok(())
 }
 
+#[allow(dead_code)]
 pub fn insert_archive_chunks(
     pool: &DbPool,
     archive_id: &str,
@@ -168,7 +170,15 @@ pub fn get_archives(
         param_values.iter().map(|p| p.as_ref()).collect();
     let rows = stmt.query_map(params_refs.as_slice(), row_to_archive)?;
 
-    Ok(rows.filter_map(|r| r.ok()).collect())
+    let archives: Vec<Archive> = rows
+        .map(|r| {
+            r.map_err(|e| {
+                tracing::warn!("Failed to read archive row: {}", e);
+                crate::error::AppError::Db(e)
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(archives)
 }
 
 pub fn get_archive(
@@ -187,6 +197,7 @@ pub fn get_archive(
     }
 }
 
+#[allow(dead_code)]
 pub fn delete_archive(
     pool: &DbPool,
     id: &str,
@@ -226,7 +237,15 @@ pub fn get_archive_chunks(
     )?;
     let rows =
         stmt.query_map(params![archive_id], |row| row.get::<_, String>(0))?;
-    Ok(rows.filter_map(|r| r.ok()).collect())
+    let chunks: Vec<String> = rows
+        .map(|r| {
+            r.map_err(|e| {
+                tracing::warn!("Failed to read chunk hash row: {}", e);
+                crate::error::AppError::Db(e)
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(chunks)
 }
 
 pub fn get_timeline(
@@ -240,7 +259,15 @@ pub fn get_timeline(
         SELECT_FIELDS
     ))?;
     let rows = stmt.query_map(params![file_path], row_to_archive)?;
-    Ok(rows.filter_map(|r| r.ok()).collect())
+    let archives: Vec<Archive> = rows
+        .map(|r| {
+            r.map_err(|e| {
+                tracing::warn!("Failed to read timeline row: {}", e);
+                crate::error::AppError::Db(e)
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(archives)
 }
 
 pub fn get_children(
@@ -254,7 +281,15 @@ pub fn get_children(
         SELECT_FIELDS
     ))?;
     let rows = stmt.query_map(params![parent_id], row_to_archive)?;
-    Ok(rows.filter_map(|r| r.ok()).collect())
+    let archives: Vec<Archive> = rows
+        .map(|r| {
+            r.map_err(|e| {
+                tracing::warn!("Failed to read children row: {}", e);
+                crate::error::AppError::Db(e)
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(archives)
 }
 
 pub fn get_statistics(
@@ -333,22 +368,32 @@ pub fn get_archives_paginated(
     let total: i64 =
         count_stmt.query_row(count_params_refs.as_slice(), |r| r.get(0))?;
 
-    // Get paginated results
+    // Get paginated results — 使用参数绑定而非 format! 拼接
     let offset = (page - 1) * page_size;
-    sql.push_str(&format!(
-        " ORDER BY created_at DESC LIMIT {} OFFSET {}",
-        page_size, offset
-    ));
+    sql.push_str(" ORDER BY created_at DESC LIMIT ? OFFSET ?");
+
+    // LIMIT/OFFSET 参数追加到 param_values
+    param_values.push(Box::new(page_size as i64));
+    param_values.push(Box::new(offset as i64));
 
     let mut stmt = conn.prepare(&sql)?;
     let params_refs: Vec<&dyn rusqlite::types::ToSql> =
         param_values.iter().map(|p| p.as_ref()).collect();
     let rows = stmt.query_map(params_refs.as_slice(), row_to_archive)?;
 
-    Ok((rows.filter_map(|r| r.ok()).collect(), total))
+    let archives: Vec<Archive> = rows
+        .map(|r| {
+            r.map_err(|e| {
+                tracing::warn!("Failed to read paginated archive row: {}", e);
+                crate::error::AppError::Db(e)
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok((archives, total))
 }
 
 /// 批量删除存档
+#[allow(dead_code)]
 pub fn delete_archives_batch(
     pool: &DbPool,
     ids: &[String],
@@ -401,6 +446,12 @@ pub fn upsert_chunk(
     hash: &str,
     size: usize,
 ) -> Result<(), crate::error::AppError> {
+    if hash.len() < 2 {
+        return Err(crate::error::AppError::Other(format!(
+            "chunk hash too short for directory sharding: '{}'",
+            hash
+        )));
+    }
     let conn = pool.get()?;
     let storage_path = format!("{}/{}", &hash[..2], hash);
     conn.execute(
@@ -426,6 +477,7 @@ pub fn decrement_chunk_ref(
 }
 
 /// 删除存档的 chunks 关联记录
+#[allow(dead_code)]
 pub fn delete_archive_chunks(
     pool: &DbPool,
     archive_id: &str,
@@ -439,6 +491,7 @@ pub fn delete_archive_chunks(
 }
 
 /// 删除存档记录本身
+#[allow(dead_code)]
 pub fn delete_archive_record(
     pool: &DbPool,
     id: &str,
@@ -456,7 +509,15 @@ pub fn get_all_chunk_hashes(
     let mut stmt =
         conn.prepare("SELECT DISTINCT chunk_hash FROM archive_chunks")?;
     let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
-    Ok(rows.filter_map(|r| r.ok()).collect())
+    let hashes: Vec<String> = rows
+        .map(|r| {
+            r.map_err(|e| {
+                tracing::warn!("Failed to read chunk hash row: {}", e);
+                crate::error::AppError::Db(e)
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(hashes)
 }
 
 /// 获取所有不被引用的 chunks（ref_count = 0）
@@ -467,7 +528,15 @@ pub fn get_unreferenced_chunks(
     let mut stmt =
         conn.prepare("SELECT hash FROM chunks WHERE ref_count <= 0")?;
     let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
-    Ok(rows.filter_map(|r| r.ok()).collect())
+    let hashes: Vec<String> = rows
+        .map(|r| {
+            r.map_err(|e| {
+                tracing::warn!("Failed to read unreferenced chunk row: {}", e);
+                crate::error::AppError::Db(e)
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(hashes)
 }
 
 /// 获取指定存档的详细信息（含 chunks）

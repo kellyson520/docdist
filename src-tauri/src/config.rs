@@ -25,9 +25,9 @@ impl Default for WatcherConfig {
             exclude_patterns: vec![
                 "*.tmp".to_string(),
                 "*.swp".to_string(),
-                ".git/*".to_string(),
-                "node_modules/*".to_string(),
-                "target/*".to_string(),
+                ".git".to_string(),
+                "node_modules".to_string(),
+                "target".to_string(),
                 ".DS_Store".to_string(),
                 "thumbs.db".to_string(),
             ],

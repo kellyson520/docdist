@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useArchiveStore, type AppConfig } from '../../stores/archiveStore';
 import { Settings, Save, RotateCcw, Trash2, Shield } from 'lucide-react';
+import { formatFileSize } from '../../utils/format';
 
 export function SettingsPanel({ onClose }: { onClose: () => void }) {
   const { config, fetchConfig, updateConfig, cleanupOrphanChunks, verifyChunks } =
@@ -34,7 +35,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
     setCleaning(true);
     const stats = await cleanupOrphanChunks();
     setCleanupResult(
-      `清理完成：删除 ${stats.removed_count} 个孤儿 chunks，释放 ${formatBytes(stats.removed_bytes)}，保留 ${stats.kept_count} 个`
+      `清理完成：删除 ${stats.removed_count} 个孤儿 chunks，释放 ${formatFileSize(stats.removed_bytes)}，保留 ${stats.kept_count} 个`
     );
     setCleaning(false);
   };
@@ -336,10 +337,4 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
   );
 }
 
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
-}
+
