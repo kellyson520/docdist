@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+use std::path::Path;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WatcherConfig {
@@ -123,7 +124,7 @@ impl Default for AppConfig {
 }
 
 impl AppConfig {
-    pub fn load(data_dir: &PathBuf) -> Self {
+    pub fn load(data_dir: &Path) -> Self {
         let config_path = data_dir.join("config.json");
         if config_path.exists() {
             match std::fs::read_to_string(&config_path) {
@@ -139,7 +140,7 @@ impl AppConfig {
 
     pub fn save(
         &self,
-        data_dir: &PathBuf,
+        data_dir: &Path,
     ) -> Result<(), crate::error::AppError> {
         let config_path = data_dir.join("config.json");
         let content = serde_json::to_string_pretty(self)?;
