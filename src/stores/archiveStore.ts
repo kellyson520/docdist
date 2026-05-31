@@ -58,7 +58,7 @@ export interface CleanupStats {
 
 // ==================== State ====================
 
-interface ArchiveState {
+export interface ArchiveState {
   // 存档数据
   archives: Archive[];
   selectedArchive: Archive | null;
@@ -69,7 +69,7 @@ interface ArchiveState {
   statistics: Statistics | null;
   loading: boolean;
   error: string | null;
-  view: 'list' | 'timeline' | 'diff' | 'graph' | 'mini';
+  view: 'list' | 'timeline' | 'diff' | 'enhanced-diff' | 'graph' | 'mini';
   searchQuery: string;
 
   // 分页
@@ -292,6 +292,7 @@ export const useArchiveStore = create<ArchiveState>((set, get) => ({
     try {
       const result = await invoke<EnhancedDiffResult>('compare_archives_enhanced', { id1, id2 });
       set({ enhancedDiffResult: result, loading: false });
+      toast.info('对比完成', '增强差异分析已生成');
     } catch (err) {
       set({ error: String(err), loading: false });
       throw err;
@@ -325,7 +326,7 @@ export const useArchiveStore = create<ArchiveState>((set, get) => ({
   setCompareTarget: (archive) => set({ compareTarget: archive }),
   setView: (view) => set({ view }),
   setSearchQuery: (query) => set({ searchQuery: query }),
-  clearDiff: () => set({ diffResult: null, compareTarget: null }),
+  clearDiff: () => set({ diffResult: null, enhancedDiffResult: null, compareTarget: null }),
 
   // ==================== 批量操作 ====================
 

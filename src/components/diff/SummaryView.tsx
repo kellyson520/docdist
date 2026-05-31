@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, Minus, Edit, ChevronDown, ChevronUp } from 'lucide-react';
+import { Plus, Minus, Edit, ChevronDown, ChevronUp, Move, Type, File } from 'lucide-react';
 import type { DiffSummary, ChangeSummary } from '../../types/diff';
 
 interface SummaryViewProps {
@@ -53,6 +53,11 @@ function ChangeItem({ change }: { change: ChangeSummary }) {
     Addition: { icon: Plus, color: 'text-green-500' },
     Deletion: { icon: Minus, color: 'text-red-500' },
     Modification: { icon: Edit, color: 'text-yellow-500' },
+    Move: { icon: Move, color: 'text-blue-500' },
+    Rename: { icon: Type, color: 'text-purple-500' },
+    FormatChange: { icon: File, color: 'text-gray-500' },
+    EncodingChange: { icon: File, color: 'text-orange-500' },
+    Replacement: { icon: Edit, color: 'text-cyan-500' },
   };
 
   const config = typeConfig[change.change_type] || typeConfig.Modification;

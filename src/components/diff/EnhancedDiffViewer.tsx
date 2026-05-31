@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { FileCode, Copy, Check } from 'lucide-react';
+import { FileText, Copy, Check, FileSearch } from 'lucide-react';
 import { useArchiveStore } from '../../stores/archiveStore';
 import { DiffDetailView } from './DiffDetailView';
 import { SummaryView } from './SummaryView';
@@ -7,7 +7,7 @@ import { RegionsView } from './RegionsView';
 import type { FileType } from '../../types/diff';
 
 export function EnhancedDiffViewer() {
-  const { enhancedDiffResult, loading, clearEnhancedDiff } = useArchiveStore();
+  const { enhancedDiffResult, loading, clearDiff } = useArchiveStore();
   const [activeTab, setActiveTab] = useState<'diff' | 'summary' | 'regions'>('diff');
   const [copied, setCopied] = useState(false);
 
@@ -29,10 +29,12 @@ export function EnhancedDiffViewer() {
 
   if (!enhancedDiffResult) {
     return (
-      <div className="flex flex-col items-center justify-center h-full text-gray-400">
-        <FileCode className="w-16 h-16 mb-4 opacity-30" />
-        <p className="text-lg">选择两个存档进行对比</p>
-        <p className="text-sm mt-2">在存档列表中选择一个存档，然后点击另一个的「对比」按钮</p>
+      <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-4">
+        <FileSearch className="w-20 h-20 opacity-20" />
+        <div className="text-center">
+          <p className="text-lg font-medium text-gray-500 dark:text-gray-400">暂无差异数据</p>
+          <p className="text-sm mt-2 max-w-xs">在存档列表中选择一个存档，然后点击另一个的「对比」按钮开始分析</p>
+        </div>
       </div>
     );
   }
@@ -51,7 +53,7 @@ export function EnhancedDiffViewer() {
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b">
         <div className="flex items-center gap-3">
-          <FileCode className="w-5 h-5 text-primary-500" />
+          <FileText className="w-5 h-5 text-primary-500" />
           <h2 className="text-lg font-semibold">差异对比</h2>
           <FileTypeBadge fileType={enhancedDiffResult.file_type} />
         </div>
@@ -61,7 +63,7 @@ export function EnhancedDiffViewer() {
             {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
             <span>复制摘要</span>
           </button>
-          <button onClick={clearEnhancedDiff} className="btn-secondary">
+          <button onClick={clearDiff} className="btn-secondary">
             关闭
           </button>
         </div>
@@ -121,8 +123,8 @@ export function EnhancedDiffViewer() {
 function FileTypeBadge({ fileType }: { fileType: FileType }) {
   const getLabel = () => {
     if (fileType?.type === 'Text') return `${fileType.encoding} 文本`;
-    if (fileType?.type === 'PDF') return `PDF (${fileType.page_count}页)`;
-    if (fileType?.type === 'CAD') return `CAD (${fileType.format})`;
+    if (fileType?.type === 'Pdf') return `PDF (${fileType.page_count}页)`;
+    if (fileType?.type === 'Cad') return `CAD (${fileType.format})`;
     if (fileType?.type === 'Image') return `${fileType.width}x${fileType.height}`;
     return '二进制';
   };

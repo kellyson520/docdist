@@ -53,8 +53,8 @@ export interface EnhancedDiffResult {
 export type FileType =
   | { type: 'Text'; encoding: string; line_ending: string }
   | { type: 'Binary'; mime_type: string; size: number }
-  | { type: 'PDF'; page_count: number; has_images: boolean }
-  | { type: 'CAD'; format: string; layer_count: number; entity_count: number }
+  | { type: 'Pdf'; page_count: number; has_images: boolean }
+  | { type: 'Cad'; format: string; layer_count: number; entity_count: number }
   | { type: 'Image'; width: number; height: number; format: string }
   | { type: 'Office'; format: string; page_count: number | null };
 

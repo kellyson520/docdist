@@ -16,7 +16,8 @@ import { FolderOpen, Clock, GitCompare, GitBranch, Minimize2, Settings, Terminal
 import './styles/themes.css';
 import './styles/animations.css';
 
-type View = 'list' | 'timeline' | 'diff' | 'enhanced-diff' | 'graph';
+import type { ArchiveState } from './stores/archiveStore';
+type View = ArchiveState['view'];
 
 export default function App() {
   const { fetchArchives, fetchStatistics, statistics, view, setView } = useArchiveStore();

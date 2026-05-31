@@ -16,7 +16,7 @@ export function ArchiveList() {
     archives, selectedArchive, loading, searchQuery,
     selectedIds, page, hasMore,
     fetchArchives, fetchArchivesPaginated, createArchive, restoreArchive, deleteArchive,
-    deleteArchivesBatch, compareArchives, selectArchive, setSearchQuery,
+    deleteArchivesBatch, compareArchives, compareArchivesEnhanced, selectArchive, setSearchQuery, setView,
     toggleSelect, selectAll, clearSelection,
   } = useArchiveStore();
 
@@ -140,7 +140,8 @@ export function ArchiveList() {
               onCompare={() => {
                 if (selectedArchive && selectedArchive.id !== archive.id) {
                   if (selectedArchive.file_path === archive.file_path) {
-                    compareArchives(selectedArchive.id, archive.id);
+                    compareArchivesEnhanced(selectedArchive.id, archive.id);
+                    setView('enhanced-diff');
                   } else {
                     toast.warning('只能对比同一文件的不同版本');
                   }
