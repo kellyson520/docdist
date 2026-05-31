@@ -596,7 +596,7 @@ describe('useArchiveStore', () => {
       const mockResult = {
         diff_result: { hunks: [], stats: { additions: 0, deletions: 0, unchanged: 0 } },
         summary: {
-          stats: { additions: 0, deletions: 0, modifications: 0, moves: 0, renames: 0 },
+          stats: { additions: 0, deletions: 0, unchanged: 0 },
           changes: [],
           change_distribution: { additions: 0, deletions: 0, modifications: 0, moves: 0, renames: 0 },
           affected_regions: [],
@@ -617,7 +617,7 @@ describe('useArchiveStore', () => {
       const mockResult = {
         diff_result: { hunks: [], stats: { additions: 5, deletions: 2, unchanged: 10 } },
         summary: {
-          stats: { additions: 5, deletions: 2, modifications: 0, moves: 0, renames: 0 },
+          stats: { additions: 5, deletions: 2, unchanged: 0 },
           changes: [
             {
               id: 0,
@@ -662,7 +662,7 @@ describe('useArchiveStore', () => {
         enhancedDiffResult: {
           diff_result: { hunks: [], stats: { additions: 0, deletions: 0, unchanged: 0 } },
           summary: {
-            stats: { additions: 0, deletions: 0, modifications: 0, moves: 0, renames: 0 },
+            stats: { additions: 0, deletions: 0, unchanged: 0 },
             changes: [],
             change_distribution: { additions: 0, deletions: 0, modifications: 0, moves: 0, renames: 0 },
             affected_regions: [],
@@ -693,7 +693,7 @@ describe('useArchiveStore', () => {
       resolvePromise!({
         diff_result: { hunks: [], stats: { additions: 0, deletions: 0, unchanged: 0 } },
         summary: {
-          stats: { additions: 0, deletions: 0, modifications: 0, moves: 0, renames: 0 },
+          stats: { additions: 0, deletions: 0, unchanged: 0 },
           changes: [],
           change_distribution: { additions: 0, deletions: 0, modifications: 0, moves: 0, renames: 0 },
           affected_regions: [],

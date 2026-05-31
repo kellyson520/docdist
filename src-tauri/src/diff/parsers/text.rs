@@ -79,7 +79,10 @@ mod tests {
         let result = parser.detect_type("test.txt", b"").unwrap();
 
         match result {
-            FileType::Text { encoding, line_ending } => {
+            FileType::Text {
+                encoding,
+                line_ending,
+            } => {
                 assert_eq!(encoding, "UTF-8");
                 assert_eq!(line_ending, "\n");
             }
