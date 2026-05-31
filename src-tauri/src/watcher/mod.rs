@@ -300,7 +300,20 @@ impl FileWatcher {
         // 停止防抖线程
         self.debounce_stop.store(false, Ordering::SeqCst);
         if let Some(handle) = self.debounce_handle.take() {
-            let _ = handle.join();
+            // 使用带超时的 join，避免无限阻塞（最多等 3 秒）
+            let join_start = std::time::Instant::now();
+            let timeout = Duration::from_secs(3);
+            while !handle.is_finished() && join_start.elapsed() < timeout {
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            if handle.is_finished() {
+                let _ = handle.join();
+            } else {
+                tracing::warn!(
+                    "Debounce thread did not exit within {:?}, skipping join",
+                    timeout
+                );
+            }
         }
 
         if let Some(mut watcher) = self.watcher.take() {
@@ -378,6 +391,13 @@ impl FileWatcher {
             watched.remove(pos);
         }
         Ok(())
+    }
+}
+
+impl Drop for FileWatcher {
+    fn drop(&mut self) {
+        tracing::info!("FileWatcher dropping, stopping gracefully...");
+        self.stop();
     }
 }
 

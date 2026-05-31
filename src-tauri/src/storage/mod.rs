@@ -17,42 +17,101 @@ fn hash_prefix(hash: &str) -> Result<&str, crate::error::AppError> {
 }
 
 /// 存储文件到分块存储，返回 (chunk_hashes, chunk_sizes, file_size, file_checksum)
+/// 使用流式分块读取，避免一次性将整个文件加载到内存中，防止大文件 OOM。
 pub fn store_file(
     base_dir: &Path,
     file_path: &Path,
     chunk_size: usize,
 ) -> Result<(Vec<String>, Vec<usize>, u64, String), crate::error::AppError> {
-    let content = std::fs::read(file_path)?;
-    let file_size = content.len() as u64;
-    let file_checksum = compute_hash(&content);
+    use std::io::Read;
+
+    let mut file = std::fs::File::open(file_path)?;
+    let mut buffer = vec![0u8; chunk_size];
     let mut chunk_hashes = Vec::new();
     let mut chunk_sizes = Vec::new();
+    let mut file_hasher = blake3::Hasher::new();
+    let mut file_size: u64 = 0;
+    let mut filled: usize = 0; // buffer 中当前有效数据量
 
-    for chunk in content.chunks(chunk_size) {
-        let hash = compute_hash(chunk);
-        let prefix = hash_prefix(&hash)?;
-        let chunk_dir = base_dir.join(prefix);
-        let chunk_path = chunk_dir.join(&hash);
-
-        if !chunk_path.exists() {
-            std::fs::create_dir_all(&chunk_dir)?;
-            std::fs::write(&chunk_path, chunk)?;
+    loop {
+        // 从文件读取数据填充 buffer 的空余部分
+        loop {
+            let n = file.read(&mut buffer[filled..])?;
+            if n == 0 {
+                break;
+            }
+            filled += n;
         }
 
-        chunk_hashes.push(hash);
-        chunk_sizes.push(chunk.len());
+        // 没有数据了（EOF 且无剩余），退出外层循环
+        if filled == 0 {
+            break;
+        }
+
+        // 处理 buffer 中完整的 chunk
+        let mut consumed = 0;
+        while consumed + chunk_size <= filled {
+            let chunk = &buffer[consumed..consumed + chunk_size];
+            file_hasher.update(chunk);
+            file_size += chunk_size as u64;
+
+            let hash = compute_hash(chunk);
+            let prefix = hash_prefix(&hash)?;
+            let chunk_dir = base_dir.join(prefix);
+            let chunk_path = chunk_dir.join(&hash);
+
+            if !chunk_path.exists() {
+                std::fs::create_dir_all(&chunk_dir)?;
+                std::fs::write(&chunk_path, chunk)?;
+            }
+
+            chunk_hashes.push(hash);
+            chunk_sizes.push(chunk_size);
+            consumed += chunk_size;
+        }
+
+        // 处理剩余的最后一个 chunk（可能小于 chunk_size）
+        if consumed < filled {
+            let chunk = &buffer[consumed..filled];
+            file_hasher.update(chunk);
+            file_size += chunk.len() as u64;
+
+            let hash = compute_hash(chunk);
+            let prefix = hash_prefix(&hash)?;
+            let chunk_dir = base_dir.join(prefix);
+            let chunk_path = chunk_dir.join(&hash);
+
+            if !chunk_path.exists() {
+                std::fs::create_dir_all(&chunk_dir)?;
+                std::fs::write(&chunk_path, chunk)?;
+            }
+
+            chunk_hashes.push(hash);
+            chunk_sizes.push(chunk.len());
+        }
+
+        // 重置 buffer，准备下一轮读取
+        filled = 0;
     }
 
+    let file_checksum = file_hasher.finalize().to_hex().to_string();
     Ok((chunk_hashes, chunk_sizes, file_size, file_checksum))
 }
 
 /// 从分块存储恢复文件
+/// 使用流式写入，避免一次性将整个文件加载到内存中。
 pub fn restore_file(
     base_dir: &Path,
     chunk_hashes: &[String],
     output_path: &Path,
 ) -> Result<(), crate::error::AppError> {
-    let mut content = Vec::new();
+    use std::io::Write;
+
+    if let Some(parent) = output_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+
+    let mut out_file = std::fs::File::create(output_path)?;
 
     for hash in chunk_hashes {
         let prefix = hash_prefix(hash)?;
@@ -64,14 +123,9 @@ pub fn restore_file(
             )));
         }
         let chunk_data = std::fs::read(&chunk_path)?;
-        content.extend_from_slice(&chunk_data);
+        out_file.write_all(&chunk_data)?;
     }
 
-    if let Some(parent) = output_path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-
-    std::fs::write(output_path, &content)?;
     Ok(())
 }
 
@@ -565,8 +619,8 @@ mod tests {
         let restored = std::fs::read(&restore_path).unwrap();
         assert_eq!(content, restored.as_slice(), "大文件 roundtrip 内容应一致");
 
-        // 验证 checksum
-        assert_eq!(compute_hash(&restored), checksum);
+        // 验证 checksum (file_checksum 现在使用 blake3 增量计算)
+        assert_eq!(blake3::hash(&restored).to_hex().to_string(), checksum);
     }
 
     // ========== 辅助 trait 测试 ==========

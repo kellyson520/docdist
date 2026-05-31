@@ -128,12 +128,20 @@ impl AppConfig {
         let config_path = data_dir.join("config.json");
         if config_path.exists() {
             match std::fs::read_to_string(&config_path) {
-                Ok(content) => {
-                    serde_json::from_str(&content).unwrap_or_default()
+                Ok(content) => match serde_json::from_str(&content) {
+                    Ok(config) => config,
+                    Err(e) => {
+                        tracing::warn!("配置文件解析失败，使用默认配置: {}", e);
+                        Self::default()
+                    }
+                },
+                Err(e) => {
+                    tracing::error!("读取配置文件失败: {}", e);
+                    Self::default()
                 }
-                Err(_) => Self::default(),
             }
         } else {
+            tracing::info!("配置文件不存在，使用默认配置");
             Self::default()
         }
     }

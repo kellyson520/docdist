@@ -2,7 +2,60 @@ use crate::db::{self, Archive, DbPool};
 use crate::diff;
 use crate::error::AppError;
 use crate::storage;
-use std::path::Path;
+use std::path::{Component, Path};
+
+/// 验证归档源文件路径安全性（防信息泄露 CWE-200）
+/// 规范化路径（解析符号链接），拒绝系统敏感目录
+fn validate_file_path(path: &Path) -> Result<(), AppError> {
+    if !path.exists() {
+        return Err(AppError::Other("文件不存在".to_string()));
+    }
+
+    // 规范化路径（解析符号链接、. 和 .. 等）
+    let canonical = path
+        .canonicalize()
+        .map_err(|_| AppError::Other("无法解析文件路径".to_string()))?;
+
+    let path_str = canonical.to_string_lossy().to_string();
+    let forbidden = [
+        "/etc", "/sys", "/proc", "/dev", "/root", "/boot", "/var/log",
+    ];
+    for prefix in &forbidden {
+        if path_str == *prefix || path_str.starts_with(&format!("{}/", prefix))
+        {
+            return Err(AppError::Other(format!(
+                "不允许归档系统文件: {}",
+                prefix
+            )));
+        }
+    }
+
+    Ok(())
+}
+
+/// 验证还原目标路径安全性（拒绝路径遍历和系统敏感目录）
+fn validate_target_path(path: &Path) -> Result<(), AppError> {
+    // 1. 检查路径组件中没有 ..
+    for component in path.components() {
+        if let Component::ParentDir = component {
+            return Err(AppError::Other("路径不允许包含 ..".to_string()));
+        }
+    }
+
+    // 2. 检查不在系统敏感目录
+    let path_str = path.to_string_lossy().to_string();
+    let forbidden = ["/etc", "/sys", "/proc", "/dev", "/root", "/boot"];
+    for prefix in &forbidden {
+        if path_str.starts_with(prefix) {
+            return Err(AppError::Other(format!(
+                "不允许写入系统目录: {}",
+                prefix
+            )));
+        }
+    }
+
+    Ok(())
+}
 
 pub struct ArchiveService {
     pool: DbPool,
@@ -30,9 +83,7 @@ impl ArchiveService {
         parent_id: Option<String>,
     ) -> Result<Archive, AppError> {
         let path = Path::new(file_path);
-        if !path.exists() {
-            return Err(AppError::Other("文件不存在".to_string()));
-        }
+        validate_file_path(path)?;
 
         // 分块存储文件（使用配置的 chunk_size）
         let (chunk_hashes, chunk_sizes, file_size, checksum) =
@@ -139,6 +190,8 @@ impl ArchiveService {
             Some(p) => std::path::PathBuf::from(p),
             None => std::path::PathBuf::from(&archive.file_path),
         };
+
+        validate_target_path(&output_path)?;
 
         storage::restore_file(&self.chunks_dir, &chunk_hashes, &output_path)?;
 
@@ -1191,5 +1244,93 @@ mod tests {
         // 按 fp2 过滤：只返回 fp2 的 1 个节点
         let tree_b = service.get_archive_tree(Some(&fp2)).unwrap();
         assert_eq!(tree_b.len(), 1, "should return 1 archive for fp2");
+    }
+
+    // ================================================================
+    // Test: restore_archive 路径遍历漏洞修复 (CWE-22)
+    // ================================================================
+    #[test]
+    fn test_restore_rejects_path_traversal() {
+        let result =
+            validate_target_path(Path::new("/home/user/../../etc/passwd"));
+        assert!(result.is_err(), "should reject path with ..");
+        let err_msg = format!("{}", result.unwrap_err());
+        assert!(
+            err_msg.contains(".."),
+            "error should mention .., got: {}",
+            err_msg
+        );
+    }
+
+    #[test]
+    fn test_restore_rejects_system_directory() {
+        let result = validate_target_path(Path::new("/etc/passwd"));
+        assert!(result.is_err(), "should reject /etc path");
+        let err_msg = format!("{}", result.unwrap_err());
+        assert!(
+            err_msg.contains("不允许写入系统目录"),
+            "error should mention system dir, got: {}",
+            err_msg
+        );
+
+        // 验证其他敏感目录也被拒绝
+        for dir in &[
+            "/sys/kernel",
+            "/proc/1/mem",
+            "/dev/null",
+            "/root/.ssh",
+            "/boot/vmlinuz",
+        ] {
+            let result = validate_target_path(Path::new(dir));
+            assert!(result.is_err(), "should reject {}", dir);
+        }
+    }
+
+    #[test]
+    fn test_restore_allows_normal_path() {
+        let result = validate_target_path(Path::new("/home/user/file.txt"));
+        assert!(
+            result.is_ok(),
+            "should allow normal user path, got: {:?}",
+            result
+        );
+
+        let result2 = validate_target_path(Path::new("/tmp/test.txt"));
+        assert!(
+            result2.is_ok(),
+            "should allow /tmp path, got: {:?}",
+            result2
+        );
+    }
+
+    // ================================================================
+    // Test: create_archive 拒绝系统敏感文件 (CWE-200)
+    // ================================================================
+    #[test]
+    fn test_create_rejects_system_file() {
+        let (service, _dir) = setup_service();
+
+        let result =
+            service.create_archive("/etc/passwd", "hack", vec![], None);
+
+        assert!(result.is_err(), "should reject /etc/passwd");
+        let msg = format!("{}", result.unwrap_err());
+        assert!(
+            msg.contains("不允许归档系统文件"),
+            "error should mention forbidden path, got: {}",
+            msg
+        );
+    }
+
+    // ================================================================
+    // Test: create_archive 允许普通用户文件
+    // ================================================================
+    #[test]
+    fn test_create_allows_normal_file() {
+        let (service, dir) = setup_service();
+        let file_path = create_test_file(&dir, "normal.txt", b"safe content");
+
+        let result = service.create_archive(&file_path, "ok", vec![], None);
+        assert!(result.is_ok(), "should allow normal user file");
     }
 }
