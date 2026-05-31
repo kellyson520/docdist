@@ -234,6 +234,46 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
             )}
           </section>
 
+          {/* Log Config */}
+          <section>
+            <h3 className="text-sm font-semibold text-gray-700 mb-3">日志设置</h3>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">日志级别</label>
+                <select
+                  value={localConfig.log.level}
+                  onChange={(e) =>
+                    setLocalConfig({
+                      ...localConfig,
+                      log: { ...localConfig.log, level: e.target.value },
+                    })
+                  }
+                  className="w-40 px-3 py-1.5 border border-gray-200 rounded-lg text-sm"
+                >
+                  <option value="trace">Trace</option>
+                  <option value="debug">Debug</option>
+                  <option value="info">Info</option>
+                  <option value="warn">Warn</option>
+                  <option value="error">Error</option>
+                </select>
+              </div>
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={localConfig.log.file_output}
+                  onChange={(e) =>
+                    setLocalConfig({
+                      ...localConfig,
+                      log: { ...localConfig.log, file_output: e.target.checked },
+                    })
+                  }
+                  className="rounded border-gray-300"
+                />
+                <span className="text-sm text-gray-600">输出到日志文件</span>
+              </label>
+            </div>
+          </section>
+
           {/* App Config */}
           <section>
             <h3 className="text-sm font-semibold text-gray-700 mb-3">应用设置</h3>

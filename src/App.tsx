@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useArchiveStore } from './stores/archiveStore';
 import { ArchiveList } from './components/archive/ArchiveList';
 import { TimelineView } from './components/timeline/TimelineView';
@@ -8,16 +8,20 @@ import { MiniMode } from './components/mini/MiniMode';
 import { ThemeToggle } from './components/common/ThemeToggle';
 import { WatcherPanel } from './components/watcher/WatcherPanel';
 import { SettingsPanel } from './components/settings/SettingsPanel';
-import { FolderOpen, Clock, GitCompare, GitBranch, Minimize2, Settings } from 'lucide-react';
+import { ToastContainer } from './components/common/ToastContainer';
+import { LogViewer } from './components/common/LogViewer';
+import { FolderOpen, Clock, GitCompare, GitBranch, Minimize2, Settings, Terminal } from 'lucide-react';
 import './styles/themes.css';
+import './styles/animations.css';
 
 type View = 'list' | 'timeline' | 'diff' | 'graph';
 
 export default function App() {
-  const { fetchArchives, fetchStatistics, statistics, setupEventListeners } = useArchiveStore();
+  const { fetchArchives, fetchStatistics, statistics, setupEventListeners, setView } = useArchiveStore();
   const [isMini, setIsMini] = useState(false);
   const [activeView, setActiveView] = useState<View>('list');
   const [showSettings, setShowSettings] = useState(false);
+  const [showLogViewer, setShowLogViewer] = useState(false);
 
   useEffect(() => {
     fetchArchives();
@@ -30,11 +34,60 @@ export default function App() {
     return cleanup;
   }, [setupEventListeners]);
 
+  // 同步 view 到 store
+  const handleViewChange = useCallback((view: View) => {
+    setActiveView(view);
+    setView(view as 'list' | 'timeline' | 'graph' | 'mini');
+  }, [setView]);
+
+  // 全局键盘快捷键
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ctrl/Cmd + 数字切换视图
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey) {
+        switch (e.key) {
+          case '1':
+            e.preventDefault();
+            handleViewChange('list');
+            break;
+          case '2':
+            e.preventDefault();
+            handleViewChange('timeline');
+            break;
+          case '3':
+            e.preventDefault();
+            handleViewChange('diff');
+            break;
+          case '4':
+            e.preventDefault();
+            handleViewChange('graph');
+            break;
+          case ',':
+            e.preventDefault();
+            setShowSettings(s => !s);
+            break;
+          case 'l':
+            e.preventDefault();
+            setShowLogViewer(s => !s);
+            break;
+        }
+      }
+      // Escape 关闭弹窗
+      if (e.key === 'Escape') {
+        if (showSettings) setShowSettings(false);
+        else if (showLogViewer) setShowLogViewer(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleViewChange, showSettings, showLogViewer]);
+
   const navItems = [
-    { id: 'list' as View, label: '存档管理', icon: FolderOpen },
-    { id: 'timeline' as View, label: '时间轴', icon: Clock },
-    { id: 'diff' as View, label: '版本对比', icon: GitCompare },
-    { id: 'graph' as View, label: '迭代图谱', icon: GitBranch },
+    { id: 'list' as View, label: '存档管理', icon: FolderOpen, shortcut: '⌘1' },
+    { id: 'timeline' as View, label: '时间轴', icon: Clock, shortcut: '⌘2' },
+    { id: 'diff' as View, label: '版本对比', icon: GitCompare, shortcut: '⌘3' },
+    { id: 'graph' as View, label: '迭代图谱', icon: GitBranch, shortcut: '⌘4' },
   ];
 
   // Mini mode
@@ -47,92 +100,116 @@ export default function App() {
   }
 
   return (
-    <div className="flex h-screen bg-gray-50">
-      {/* Sidebar */}
-      <div className="w-56 bg-white border-r border-gray-200 flex flex-col">
-        {/* Logo */}
-        <div className="p-4 border-b border-gray-100">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center">
-              <span className="text-white text-sm font-bold">追</span>
+    <>
+      <div className="flex h-screen bg-gray-50 dark:bg-gray-900 transition-colors">
+        {/* Sidebar */}
+        <div className="w-56 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col transition-colors">
+          {/* Logo */}
+          <div className="p-4 border-b border-gray-100 dark:border-gray-700">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center shadow-sm">
+                <span className="text-white text-sm font-bold">追</span>
+              </div>
+              <div>
+                <h1 className="font-bold text-sm dark:text-white">DocDist</h1>
+                <p className="text-xs text-gray-400">文件历史管理</p>
+              </div>
             </div>
-            <div>
-              <h1 className="font-bold text-sm">DocDist</h1>
-              <p className="text-xs text-gray-400">文件历史管理</p>
+          </div>
+
+          {/* Navigation */}
+          <nav className="flex-1 p-3 space-y-1">
+            {navItems.map(({ id, label, icon: Icon, shortcut }) => (
+              <button
+                key={id}
+                onClick={() => handleViewChange(id)}
+                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-all duration-150 group ${
+                  activeView === id
+                    ? 'bg-primary-50 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400 font-medium shadow-sm'
+                    : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 hover:text-gray-800 dark:hover:text-gray-200'
+                }`}
+              >
+                <Icon className="w-4 h-4" />
+                <span className="flex-1 text-left">{label}</span>
+                <span className="text-[10px] text-gray-300 dark:text-gray-600 opacity-0 group-hover:opacity-100 transition-opacity">
+                  {shortcut}
+                </span>
+              </button>
+            ))}
+          </nav>
+
+          {/* Stats */}
+          {statistics && (
+            <div className="p-3 border-t border-gray-100 dark:border-gray-700">
+              <div className="text-xs text-gray-400 space-y-1">
+                <p className="flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-green-400" />
+                  存档 {statistics.total_archives}
+                </p>
+                <p className="flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-400" />
+                  文件 {statistics.unique_files}
+                </p>
+                <p className="flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-purple-400" />
+                  {formatBytes(statistics.total_size)}
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Bottom actions */}
+          <div className="p-3 border-t border-gray-100 dark:border-gray-700 flex items-center justify-between">
+            <ThemeToggle />
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setShowLogViewer(true)}
+                className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition"
+                title="日志 (⌘L)"
+              >
+                <Terminal className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => setShowSettings(true)}
+                className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition"
+                title="设置 (⌘,)"
+              >
+                <Settings className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => setIsMini(true)}
+                className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition"
+                title="迷你模式"
+              >
+                <Minimize2 className="w-4 h-4" />
+              </button>
             </div>
           </div>
         </div>
 
-        {/* Navigation */}
-        <nav className="flex-1 p-3 space-y-1">
-          {navItems.map(({ id, label, icon: Icon }) => (
-            <button
-              key={id}
-              onClick={() => setActiveView(id)}
-              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition ${
-                activeView === id
-                  ? 'bg-primary-50 text-primary-600 font-medium'
-                  : 'text-gray-600 hover:bg-gray-50 hover:text-gray-800'
-              }`}
-            >
-              <Icon className="w-4 h-4" />
-              {label}
-            </button>
-          ))}
-        </nav>
-
-        {/* Stats */}
-        {statistics && (
-          <div className="p-3 border-t border-gray-100">
-            <div className="text-xs text-gray-400 space-y-1">
-              <p>📦 存档数：{statistics.total_archives}</p>
-              <p>📁 文件数：{statistics.unique_files}</p>
-              <p>💾 总大小：{formatBytes(statistics.total_size)}</p>
-            </div>
+        {/* Main content */}
+        <div className="flex-1 flex flex-col overflow-hidden">
+          <div className="flex-1 overflow-auto p-6 animate-fade-in">
+            {activeView === 'list' && <ArchiveList />}
+            {activeView === 'timeline' && <TimelineView />}
+            {activeView === 'diff' && <DiffViewer />}
+            {activeView === 'graph' && <IterationGraph />}
           </div>
-        )}
+        </div>
 
-        {/* Bottom actions */}
-        <div className="p-3 border-t border-gray-100 flex items-center justify-between">
-          <ThemeToggle />
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => setShowSettings(true)}
-              className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition"
-              title="设置"
-            >
-              <Settings className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() => setIsMini(true)}
-              className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition"
-              title="迷你模式"
-            >
-              <Minimize2 className="w-4 h-4" />
-            </button>
-          </div>
+        {/* Right sidebar — Watcher Panel */}
+        <div className="w-72 bg-gray-50 dark:bg-gray-850 border-l border-gray-200 dark:border-gray-700 overflow-y-auto p-3 space-y-3 transition-colors">
+          <WatcherPanel />
         </div>
       </div>
 
-      {/* Main content */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Content area */}
-        <div className="flex-1 overflow-auto p-6">
-          {activeView === 'list' && <ArchiveList />}
-          {activeView === 'timeline' && <TimelineView />}
-          {activeView === 'diff' && <DiffViewer />}
-          {activeView === 'graph' && <IterationGraph />}
-        </div>
-      </div>
-
-      {/* Right sidebar — Watcher Panel */}
-      <div className="w-72 bg-gray-50 border-l border-gray-200 overflow-y-auto p-3 space-y-3">
-        <WatcherPanel />
-      </div>
-
-      {/* Settings modal */}
+      {/* Modals */}
       {showSettings && <SettingsPanel onClose={() => setShowSettings(false)} />}
-    </div>
+      {showLogViewer && <LogViewer onClose={() => setShowLogViewer(false)} />}
+
+      {/* Toast notifications */}
+      <ToastContainer />
+    </>
   );
 }
 

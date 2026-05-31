@@ -28,6 +28,8 @@ impl Default for WatcherConfig {
                 ".git/*".to_string(),
                 "node_modules/*".to_string(),
                 "target/*".to_string(),
+                ".DS_Store".to_string(),
+                "thumbs.db".to_string(),
             ],
             auto_archive_delay: 60,
             min_file_size: 0,
@@ -66,11 +68,36 @@ impl Default for StorageConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LogConfig {
+    /// 日志级别: trace, debug, info, warn, error
+    pub level: String,
+    /// 是否输出到文件
+    pub file_output: bool,
+    /// 日志文件最大大小（MB）
+    pub max_file_size_mb: u64,
+    /// 保留日志文件天数
+    pub retention_days: u32,
+}
+
+impl Default for LogConfig {
+    fn default() -> Self {
+        Self {
+            level: "info".to_string(),
+            file_output: true,
+            max_file_size_mb: 10,
+            retention_days: 7,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     /// 监控配置
     pub watcher: WatcherConfig,
     /// 存储配置
     pub storage: StorageConfig,
+    /// 日志配置
+    pub log: LogConfig,
     /// UI 语言
     pub language: String,
     /// 主题
@@ -86,6 +113,7 @@ impl Default for AppConfig {
         Self {
             watcher: WatcherConfig::default(),
             storage: StorageConfig::default(),
+            log: LogConfig::default(),
             language: "zh-CN".to_string(),
             theme: "light".to_string(),
             auto_start: false,

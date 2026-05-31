@@ -1,7 +1,11 @@
 import { create } from 'zustand';
+import { toast } from './toastStore';
+import { createLogger } from '../utils/logger';
 import { invoke } from '@tauri-apps/api/tauri';
 import { listen } from '@tauri-apps/api/event';
 import type { Archive, DiffResult, Statistics } from '../types';
+
+const log = createLogger('store');
 
 // ==================== Types ====================
 
@@ -32,6 +36,12 @@ export interface AppConfig {
     storage_path: string | null;
     max_versions: number;
     auto_cleanup_days: number;
+  };
+  log: {
+    level: string;
+    file_output: boolean;
+    max_file_size_mb: number;
+    retention_days: number;
   };
   language: string;
   theme: string;
@@ -191,11 +201,16 @@ export const useArchiveStore = create<ArchiveState>((set, get) => ({
         tags: tags || [],
         parentId: null,
       });
+      log.info('存档创建成功', { path });
+      toast.success('存档创建成功', path.split('/').pop());
       // Refresh list
       const { fetchArchives, searchQuery } = get();
       await fetchArchives(undefined, searchQuery || undefined);
     } catch (e: unknown) {
-      set({ error: e instanceof Error ? e.message : String(e), loading: false });
+      const msg = e instanceof Error ? e.message : String(e);
+      log.error('创建存档失败', msg);
+      toast.error('创建失败', msg);
+      set({ error: msg, loading: false });
     }
   },
 
@@ -206,6 +221,8 @@ export const useArchiveStore = create<ArchiveState>((set, get) => ({
         id,
         targetPath: targetPath || null,
       });
+      log.info('存档已恢复', { id });
+      toast.success('恢复成功', '文件已恢复到指定位置');
       set({ loading: false });
     } catch (e: unknown) {
       set({ error: e instanceof Error ? e.message : String(e), loading: false });
@@ -216,6 +233,8 @@ export const useArchiveStore = create<ArchiveState>((set, get) => ({
     set({ loading: true, error: null });
     try {
       await invoke('delete_archive', { id });
+      log.info('存档已删除', { id });
+      toast.success('已删除', '存档已成功删除');
       const { fetchArchives, searchQuery, selectedIds } = get();
       const newSelected = new Set(selectedIds);
       newSelected.delete(id);
@@ -254,8 +273,10 @@ export const useArchiveStore = create<ArchiveState>((set, get) => ({
   compareArchives: async (id1: string, id2: string) => {
     set({ loading: true, error: null, diffResult: null });
     try {
+      log.info('开始对比', { id1, id2 });
       const diffResult = await invoke<DiffResult>('compare_archives', { id1, id2 });
       set({ diffResult, loading: false });
+      toast.info('对比完成', `+${diffResult.stats.additions} -${diffResult.stats.deletions}`);
     } catch (e: unknown) {
       set({ error: e instanceof Error ? e.message : String(e), loading: false });
     }
