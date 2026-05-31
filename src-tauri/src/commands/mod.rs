@@ -272,7 +272,7 @@ pub async fn update_config(
     config.save(&state.data_dir)?;
 
     // 如果 watcher 配置变了，应用到 watcher
-    let watcher = state.watcher.lock().unwrap_or_else(|e| e.into_inner());
+    let mut watcher = state.watcher.lock().unwrap_or_else(|e| e.into_inner());
     watcher.set_exclude_patterns(config.watcher.exclude_patterns.clone());
     watcher.set_debounce_duration(std::time::Duration::from_secs(
         config.watcher.auto_archive_delay,

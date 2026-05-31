@@ -140,19 +140,20 @@ pub fn run() {
             if restore_watcher_cfg.enabled
                 && !restore_watcher_cfg.watch_dirs.is_empty()
             {
-                let state: tauri::State<AppState> = app.state();
+                let handle = app.handle();
+                let state: tauri::State<AppState> = handle.state();
                 let mut watcher =
                     state.watcher.lock().unwrap_or_else(|e| e.into_inner());
-                let handle = app.handle().clone();
+                let emit_handle = handle.clone();
                 watcher.set_auto_archive_callback(std::sync::Arc::new(
                     move |path: String| {
-                        let _ = handle.emit_all(
+                        let _ = emit_handle.emit_all(
                             "auto-archive-request",
                             serde_json::json!({ "path": path }),
                         );
                     },
                 ));
-                let app_handle = app.handle().clone();
+                let app_handle = handle.clone();
                 if let Err(e) = watcher.start(
                     restore_watcher_cfg.watch_dirs.clone(),
                     Some(app_handle),
