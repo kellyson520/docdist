@@ -63,8 +63,6 @@ fn gbk_to_unicode(lead: u8, trail: u8) -> Option<char> {
     }
 
     // GBK 码位
-    let gbk_offset =
-        (l - 0x81) * 190 + (if t >= 0x80 { t - 0x41 } else { t - 0x40 });
 
     // GBK 一级汉字 (A1A1-AFFE): 码位 0-682 -> Unicode 0x4E00-0x9FA5 (CJK统一汉字)
     // GBK 二级汉字 (B0A1-D7F9): 码位 682-... -> Unicode 继续
@@ -75,7 +73,7 @@ fn gbk_to_unicode(lead: u8, trail: u8) -> Option<char> {
     // 0xB0A1-0xD7F9: 汉字区 (码位 745-8468)
     // 0xD8A1-0xF7FE: 汉字区续 (码位 8469-...)
 
-    if l >= 0xB0 && l <= 0xD7 {
+    if (0xB0..=0xD7).contains(&l) {
         // 一级汉字区：Unicode 0x4E00-0x9FA5
         let hanzi_offset =
             (l - 0xB0) * 94 + (t - if t >= 0x80 { 0x41 } else { 0x40 });
@@ -83,7 +81,7 @@ fn gbk_to_unicode(lead: u8, trail: u8) -> Option<char> {
         return char::from_u32(code);
     }
 
-    if l >= 0xD8 && l <= 0xF7 {
+    if (0xD8..=0xF7).contains(&l) {
         // 二级汉字区：继续映射
         let hanzi_offset =
             (l - 0xD8) * 94 + (t - if t >= 0x80 { 0x41 } else { 0x40 });
@@ -93,7 +91,7 @@ fn gbk_to_unicode(lead: u8, trail: u8) -> Option<char> {
         }
     }
 
-    if l >= 0xA1 && l <= 0xA9 {
+    if (0xA1..=0xA9).contains(&l) {
         // 符号区
         let sym_offset =
             (l - 0xA1) * 94 + (t - if t >= 0x80 { 0x41 } else { 0x40 });
