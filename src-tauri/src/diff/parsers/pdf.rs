@@ -46,3 +46,35 @@ impl PdfParser {
             .map_err(|e| AppError::Other(format!("PDF 文本解码失败: {}", e)))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_detect_type_pdf() {
+        let parser = PdfParser;
+        let result = parser.detect_type("document.pdf", b"").unwrap();
+
+        match result {
+            FileType::Pdf { page_count, has_images } => {
+                assert_eq!(page_count, 0);
+                assert_eq!(has_images, false);
+            }
+            _ => panic!("Expected Pdf variant"),
+        }
+    }
+
+    #[test]
+    fn test_detect_type_non_pdf() {
+        let parser = PdfParser;
+        assert!(parser.detect_type("document.txt", b"").is_none());
+    }
+
+    #[test]
+    fn test_extract_text_returns_error() {
+        let parser = PdfParser;
+        let result = parser.extract_text(b"");
+        assert!(result.is_err());
+    }
+}

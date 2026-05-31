@@ -576,4 +576,136 @@ describe('useArchiveStore', () => {
       expect(useArchiveStore.getState().compareTarget).toBeNull()
     })
   })
+
+  // ==================== 16. Enhanced Diff ====================
+  describe('Enhanced Diff', () => {
+    beforeEach(() => {
+      useArchiveStore.setState({
+        enhancedDiffResult: null,
+        loading: false,
+        error: null,
+      })
+    })
+
+    it('should have null enhancedDiffResult initially', () => {
+      const { enhancedDiffResult } = useArchiveStore.getState()
+      expect(enhancedDiffResult).toBeNull()
+    })
+
+    it('should call compare_archives_enhanced command', async () => {
+      const mockResult = {
+        diff_result: { hunks: [], stats: { additions: 0, deletions: 0, unchanged: 0 } },
+        summary: {
+          stats: { additions: 0, deletions: 0, modifications: 0, moves: 0, renames: 0 },
+          changes: [],
+          change_distribution: { additions: 0, deletions: 0, modifications: 0, moves: 0, renames: 0 },
+          affected_regions: [],
+          ai_summary: 'No changes',
+        },
+        file_type: { type: 'Text', encoding: 'UTF-8', line_ending: '\n' },
+        preview: null,
+      }
+
+      mockInvoke.mockResolvedValueOnce(mockResult)
+
+      await useArchiveStore.getState().compareArchivesEnhanced('id1', 'id2')
+
+      expect(mockInvoke).toHaveBeenCalledWith('compare_archives_enhanced', { id1: 'id1', id2: 'id2' })
+    })
+
+    it('should update enhancedDiffResult on success', async () => {
+      const mockResult = {
+        diff_result: { hunks: [], stats: { additions: 5, deletions: 2, unchanged: 10 } },
+        summary: {
+          stats: { additions: 5, deletions: 2, modifications: 0, moves: 0, renames: 0 },
+          changes: [
+            {
+              id: 0,
+              change_type: 'Addition',
+              location: { file_path: '', start_line: 1, end_line: 1, start_col: null, end_col: null, region_description: null },
+              description: 'Added line',
+              snippet: 'new code',
+              line_count: 1,
+            },
+          ],
+          change_distribution: { additions: 5, deletions: 2, modifications: 0, moves: 0, renames: 0 },
+          affected_regions: [],
+          ai_summary: '5 additions, 2 deletions',
+        },
+        file_type: { type: 'Text', encoding: 'UTF-8', line_ending: '\n' },
+        preview: null,
+      }
+
+      mockInvoke.mockResolvedValueOnce(mockResult)
+
+      await useArchiveStore.getState().compareArchivesEnhanced('id1', 'id2')
+
+      const { enhancedDiffResult, loading } = useArchiveStore.getState()
+      expect(enhancedDiffResult).toEqual(mockResult)
+      expect(loading).toBe(false)
+    })
+
+    it('should set error on failure', async () => {
+      mockInvoke.mockRejectedValueOnce(new Error('Compare failed'))
+
+      await expect(
+        useArchiveStore.getState().compareArchivesEnhanced('id1', 'id2')
+      ).rejects.toThrow('Compare failed')
+
+      const { error, loading } = useArchiveStore.getState()
+      expect(error).toBe('Error: Compare failed')
+      expect(loading).toBe(false)
+    })
+
+    it('should clear enhancedDiffResult', () => {
+      useArchiveStore.setState({
+        enhancedDiffResult: {
+          diff_result: { hunks: [], stats: { additions: 0, deletions: 0, unchanged: 0 } },
+          summary: {
+            stats: { additions: 0, deletions: 0, modifications: 0, moves: 0, renames: 0 },
+            changes: [],
+            change_distribution: { additions: 0, deletions: 0, modifications: 0, moves: 0, renames: 0 },
+            affected_regions: [],
+            ai_summary: null,
+          },
+          file_type: { type: 'Text', encoding: 'UTF-8', line_ending: '\n' },
+          preview: null,
+        },
+      })
+
+      useArchiveStore.getState().clearEnhancedDiff()
+
+      expect(useArchiveStore.getState().enhancedDiffResult).toBeNull()
+    })
+
+    it('should set loading true during compare', async () => {
+      let resolvePromise: (value: any) => void
+      const promise = new Promise((resolve) => {
+        resolvePromise = resolve
+      })
+
+      mockInvoke.mockReturnValueOnce(promise as any)
+
+      const comparePromise = useArchiveStore.getState().compareArchivesEnhanced('id1', 'id2')
+
+      expect(useArchiveStore.getState().loading).toBe(true)
+
+      resolvePromise!({
+        diff_result: { hunks: [], stats: { additions: 0, deletions: 0, unchanged: 0 } },
+        summary: {
+          stats: { additions: 0, deletions: 0, modifications: 0, moves: 0, renames: 0 },
+          changes: [],
+          change_distribution: { additions: 0, deletions: 0, modifications: 0, moves: 0, renames: 0 },
+          affected_regions: [],
+          ai_summary: null,
+        },
+        file_type: { type: 'Text', encoding: 'UTF-8', line_ending: '\n' },
+        preview: null,
+      })
+
+      await comparePromise
+
+      expect(useArchiveStore.getState().loading).toBe(false)
+    })
+  })
 })

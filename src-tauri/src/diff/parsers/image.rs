@@ -38,3 +38,47 @@ impl ImageParser {
         (0, 0)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_detect_type_png() {
+        let parser = ImageParser;
+        let result = parser.detect_type("image.png", b"").unwrap();
+
+        match result {
+            FileType::Image { format, .. } => {
+                assert_eq!(format, "png");
+            }
+            _ => panic!("Expected Image variant"),
+        }
+    }
+
+    #[test]
+    fn test_detect_type_jpg() {
+        let parser = ImageParser;
+        let result = parser.detect_type("photo.jpg", b"").unwrap();
+
+        match result {
+            FileType::Image { format, .. } => {
+                assert_eq!(format, "jpg");
+            }
+            _ => panic!("Expected Image variant"),
+        }
+    }
+
+    #[test]
+    fn test_detect_type_non_image() {
+        let parser = ImageParser;
+        assert!(parser.detect_type("file.txt", b"").is_none());
+    }
+
+    #[test]
+    fn test_extract_text_empty() {
+        let parser = ImageParser;
+        let result = parser.extract_text(b"").unwrap();
+        assert_eq!(result, "");
+    }
+}

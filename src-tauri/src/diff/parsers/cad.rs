@@ -67,3 +67,48 @@ impl CadParser {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_detect_type_dxf() {
+        let parser = CadParser;
+        let result = parser.detect_type("drawing.dxf", b"").unwrap();
+
+        match result {
+            FileType::Cad { format, .. } => {
+                assert_eq!(format, "DXF");
+            }
+            _ => panic!("Expected Cad variant"),
+        }
+    }
+
+    #[test]
+    fn test_detect_type_dwg() {
+        let parser = CadParser;
+        let result = parser.detect_type("drawing.dwg", b"").unwrap();
+
+        match result {
+            FileType::Cad { format, .. } => {
+                assert_eq!(format, "DWG");
+            }
+            _ => panic!("Expected Cad variant"),
+        }
+    }
+
+    #[test]
+    fn test_detect_type_non_cad() {
+        let parser = CadParser;
+        assert!(parser.detect_type("file.txt", b"").is_none());
+    }
+
+    #[test]
+    fn test_extract_text_dxf() {
+        let parser = CadParser;
+        let data = "SECTION\nLAYER\nENDSEC".as_bytes();
+        let result = parser.extract_text(data).unwrap();
+        assert_eq!(result, "SECTION\nLAYER\nENDSEC");
+    }
+}

@@ -31,3 +31,59 @@ impl FileParser for TextParser {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_extract_text_utf8() {
+        let parser = TextParser;
+        let data = "Hello, 世界!".as_bytes();
+        let result = parser.extract_text(data).unwrap();
+        assert_eq!(result, "Hello, 世界!");
+    }
+
+    #[test]
+    fn test_extract_text_empty() {
+        let parser = TextParser;
+        let data = b"";
+        let result = parser.extract_text(data).unwrap();
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn test_detect_type_text_files() {
+        let parser = TextParser;
+
+        assert!(parser.detect_type("test.txt", b"").is_some());
+        assert!(parser.detect_type("test.md", b"").is_some());
+        assert!(parser.detect_type("test.json", b"").is_some());
+        assert!(parser.detect_type("test.rs", b"").is_some());
+        assert!(parser.detect_type("test.py", b"").is_some());
+        assert!(parser.detect_type("test.ts", b"").is_some());
+    }
+
+    #[test]
+    fn test_detect_type_non_text() {
+        let parser = TextParser;
+
+        assert!(parser.detect_type("test.pdf", b"").is_none());
+        assert!(parser.detect_type("test.png", b"").is_none());
+        assert!(parser.detect_type("test.zip", b"").is_none());
+    }
+
+    #[test]
+    fn test_detect_type_returns_text_variant() {
+        let parser = TextParser;
+        let result = parser.detect_type("test.txt", b"").unwrap();
+
+        match result {
+            FileType::Text { encoding, line_ending } => {
+                assert_eq!(encoding, "UTF-8");
+                assert_eq!(line_ending, "\n");
+            }
+            _ => panic!("Expected Text variant"),
+        }
+    }
+}

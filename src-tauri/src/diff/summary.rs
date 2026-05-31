@@ -265,4 +265,117 @@ mod tests {
         assert_eq!(result.change_distribution.additions, 1);
         assert_eq!(result.change_distribution.deletions, 1);
     }
+
+    fn create_test_diff_result_for_basic() -> DiffResult {
+        DiffResult {
+            hunks: vec![DiffHunk {
+                old_start: 1,
+                old_lines: 3,
+                new_start: 1,
+                new_lines: 4,
+                changes: vec![
+                    DiffChange {
+                        change_type: "equal".to_string(),
+                        content: "unchanged line".to_string(),
+                        old_line: Some(1),
+                        new_line: Some(1),
+                    },
+                    DiffChange {
+                        change_type: "delete".to_string(),
+                        content: "removed line".to_string(),
+                        old_line: Some(2),
+                        new_line: None,
+                    },
+                    DiffChange {
+                        change_type: "add".to_string(),
+                        content: "new line 1".to_string(),
+                        old_line: None,
+                        new_line: Some(2),
+                    },
+                    DiffChange {
+                        change_type: "add".to_string(),
+                        content: "new line 2".to_string(),
+                        old_line: None,
+                        new_line: Some(3),
+                    },
+                ],
+            }],
+            stats: DiffResultStats {
+                additions: 2,
+                deletions: 1,
+                unchanged: 1,
+            },
+        }
+    }
+
+    #[test]
+    fn test_generate_summary_basic() {
+        let gen = SummaryGenerator::new();
+        let diff_result = create_test_diff_result_for_basic();
+        let summary = gen.generate(&diff_result);
+
+        assert_eq!(summary.changes.len(), 3); // 1 delete + 2 adds (equal skipped)
+        assert_eq!(summary.change_distribution.additions, 2);
+        assert_eq!(summary.change_distribution.deletions, 1);
+        assert!(summary.ai_summary.is_some());
+    }
+
+    #[test]
+    fn test_generate_summary_max_changes() {
+        let gen = SummaryGenerator::new();
+        let mut changes = Vec::new();
+        for i in 0..150 {
+            changes.push(DiffChange {
+                change_type: "add".to_string(),
+                content: format!("line {}", i),
+                old_line: None,
+                new_line: Some(i),
+            });
+        }
+        let diff_result = DiffResult {
+            hunks: vec![DiffHunk {
+                old_start: 0,
+                old_lines: 0,
+                new_start: 1,
+                new_lines: 150,
+                changes,
+            }],
+            stats: DiffResultStats {
+                additions: 150,
+                deletions: 0,
+                unchanged: 0,
+            },
+        };
+        let summary = gen.generate(&diff_result);
+        assert_eq!(summary.changes.len(), 100); // truncated to max_changes
+    }
+
+    #[test]
+    fn test_detect_affected_regions() {
+        let gen = SummaryGenerator::new();
+        let diff_result = create_test_diff_result_for_basic();
+        let summary = gen.generate(&diff_result);
+        assert!(summary.affected_regions.len() >= 1);
+    }
+
+    #[test]
+    fn test_change_types_correctly_identified() {
+        let gen = SummaryGenerator::new();
+        let diff_result = create_test_diff_result_for_basic();
+        let summary = gen.generate(&diff_result);
+
+        let additions: Vec<_> = summary
+            .changes
+            .iter()
+            .filter(|c| c.change_type == ChangeType::Addition)
+            .collect();
+        let deletions: Vec<_> = summary
+            .changes
+            .iter()
+            .filter(|c| c.change_type == ChangeType::Deletion)
+            .collect();
+
+        assert_eq!(additions.len(), 2);
+        assert_eq!(deletions.len(), 1);
+    }
 }

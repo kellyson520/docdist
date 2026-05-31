@@ -116,4 +116,55 @@ mod tests {
         assert!(!result.identical);
         assert_eq!(result.similarity, 0.0);
     }
+
+    #[test]
+    fn test_compare_different_summary() {
+        let old = b"hello";
+        let new = b"hello world";
+        let result = BinaryDiffEngine::compare(old, new).unwrap();
+
+        assert!(!result.identical);
+        assert_eq!(result.size_change, 6); // " world" = 6 bytes
+        assert_eq!(result.old_size, 5);
+        assert_eq!(result.new_size, 11);
+        assert_ne!(result.old_hash, result.new_hash);
+        assert!(result.similarity < 1.0);
+        assert!(result.summary.contains("+6 bytes"));
+    }
+
+    #[test]
+    fn test_compare_smaller_new_summary() {
+        let old = b"hello world";
+        let new = b"hello";
+        let result = BinaryDiffEngine::compare(old, new).unwrap();
+
+        assert!(!result.identical);
+        assert_eq!(result.size_change, -6);
+        assert!(result.summary.contains("-6 bytes"));
+    }
+
+    #[test]
+    fn test_compute_hash_consistent() {
+        let data = b"test data";
+        let hash1 = BinaryDiffEngine::compute_hash(data);
+        let hash2 = BinaryDiffEngine::compute_hash(data);
+
+        assert_eq!(hash1, hash2);
+        assert!(!hash1.is_empty());
+    }
+
+    #[test]
+    fn test_calculate_similarity_same_size() {
+        let data = b"hello";
+        let similarity = BinaryDiffEngine::calculate_similarity(data, data);
+        assert_eq!(similarity, 1.0);
+    }
+
+    #[test]
+    fn test_calculate_similarity_different_size() {
+        let old = b"hi";
+        let new = b"hello";
+        let similarity = BinaryDiffEngine::calculate_similarity(old, new);
+        assert_eq!(similarity, 0.4); // 2/5
+    }
 }
