@@ -16,6 +16,7 @@ use config::AppConfig;
 use services::archive_service::ArchiveService;
 use std::sync::Mutex;
 use std::time::Duration;
+use tauri::Manager;
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
 pub struct AppState {
