@@ -414,6 +414,7 @@ pub fn delete_archives_batch(
 }
 
 /// 获取存储统计
+#[allow(dead_code)]
 pub fn get_storage_stats(
     pool: &DbPool,
 ) -> Result<serde_json::Value, crate::error::AppError> {
@@ -441,6 +442,7 @@ pub fn get_storage_stats(
 }
 
 /// 插入或更新 chunk（upsert，增加 ref_count）
+#[allow(dead_code)]
 pub fn upsert_chunk(
     pool: &DbPool,
     hash: &str,
@@ -464,6 +466,7 @@ pub fn upsert_chunk(
 }
 
 /// 减少 chunk 引用计数，如果归零则标记可清理
+#[allow(dead_code)]
 pub fn decrement_chunk_ref(
     pool: &DbPool,
     hash: &str,
@@ -521,6 +524,7 @@ pub fn get_all_chunk_hashes(
 }
 
 /// 获取所有不被引用的 chunks（ref_count = 0）
+#[allow(dead_code)]
 pub fn get_unreferenced_chunks(
     pool: &DbPool,
 ) -> Result<Vec<String>, crate::error::AppError> {
@@ -540,6 +544,7 @@ pub fn get_unreferenced_chunks(
 }
 
 /// 获取指定存档的详细信息（含 chunks）
+#[allow(dead_code)]
 pub fn get_archive_detail(
     pool: &DbPool,
     id: &str,
