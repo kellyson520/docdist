@@ -243,11 +243,7 @@ pub async fn read_log_file(
     let all_lines: Vec<String> =
         content.lines().map(|s| s.to_string()).collect();
     let total = all_lines.len();
-    let start = if total > max_lines {
-        total - max_lines
-    } else {
-        0
-    };
+    let start = total.saturating_sub(max_lines);
 
     Ok(all_lines[start..].to_vec())
 }
