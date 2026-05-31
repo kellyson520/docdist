@@ -114,7 +114,7 @@ pub fn run() {
     tracing::info!("存档服务初始化完成 (chunk_size: {})", chunk_size);
 
     // 初始化 watcher
-    let mut file_watcher = watcher::FileWatcher::new();
+    let file_watcher = watcher::FileWatcher::new();
     file_watcher
         .set_exclude_patterns(app_config.watcher.exclude_patterns.clone());
     // TODO: Watcher 的防抖延迟应从 app_config.watcher.auto_archive_delay 读取，

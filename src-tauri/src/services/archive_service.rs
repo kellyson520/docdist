@@ -68,7 +68,7 @@ impl ArchiveService {
         };
 
         // 事务保护：chunk upsert + archive_chunks 插入 + archive 插入
-        let conn = self.pool.get()?;
+        let mut conn = self.pool.get()?;
         let tx = conn.transaction()?;
 
         for (i, hash) in chunk_hashes.iter().enumerate() {
@@ -179,7 +179,7 @@ impl ArchiveService {
         let chunk_hashes = db::get_archive_chunks(&self.pool, archive_id)?;
 
         // 事务保护：删除关联 + 删除记录 + 减少引用计数
-        let conn = self.pool.get()?;
+        let mut conn = self.pool.get()?;
         let tx = conn.transaction()?;
 
         tx.execute(
@@ -209,7 +209,7 @@ impl ArchiveService {
         &self,
         ids: &[String],
     ) -> Result<usize, AppError> {
-        let conn = self.pool.get()?;
+        let mut conn = self.pool.get()?;
         let tx = conn.transaction()?;
 
         let mut total_deleted = 0;
@@ -226,6 +226,7 @@ impl ArchiveService {
                     })?
                     .map(|r| r.map_err(crate::error::AppError::Db))
                     .collect::<Result<Vec<_>, _>>()?;
+                hashes
             };
 
             tx.execute(
