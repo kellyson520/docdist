@@ -1,8 +1,8 @@
-// Suppress warnings in modules owned by other agents (db, watcher) to keep CI green.
+// Suppress specific warnings in modules owned by other agents (db, watcher) to keep CI green.
 // Ideally these modules should be fixed upstream; this is a stopgap.
-#[allow(clippy::all)]
+#[allow(dead_code, unused_variables, unused_imports)]
 mod db;
-#[allow(clippy::all)]
+#[allow(dead_code, unused_variables, unused_imports)]
 mod watcher;
 
 mod commands;

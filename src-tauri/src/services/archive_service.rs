@@ -2,6 +2,7 @@ use crate::db::{self, Archive, DbPool};
 use crate::diff;
 use crate::error::AppError;
 use crate::storage;
+use std::collections::VecDeque;
 use std::path::{Component, Path};
 
 /// 验证归档源文件路径安全性（防信息泄露 CWE-200）
@@ -103,6 +104,13 @@ impl ArchiveService {
             parent_id
         };
 
+        // 循环引用检测：遍历 parent_id 链，确保不会形成环
+        if let Some(ref pid) = actual_parent {
+            if self.has_circular_reference(pid)? {
+                return Err(AppError::Other("检测到循环引用".to_string()));
+            }
+        }
+
         let archive = Archive {
             id: uuid::Uuid::new_v4().to_string(),
             file_path: file_path.to_string(),
@@ -191,6 +199,13 @@ impl ArchiveService {
             None => std::path::PathBuf::from(&archive.file_path),
         };
 
+        if target_path.is_none() && !output_path.exists() {
+            tracing::warn!(
+                "原文件已不存在，将恢复创建新文件: {}",
+                output_path.display()
+            );
+        }
+
         validate_target_path(&output_path)?;
 
         storage::restore_file(&self.chunks_dir, &chunk_hashes, &output_path)?;
@@ -257,49 +272,61 @@ impl ArchiveService {
         Ok(())
     }
 
-    /// 批量删除存档（单个事务保护所有删除操作）
+    /// 批量删除存档（单个事务保护，IN 子句批量操作，避免 N+1 查询）
     pub fn delete_archives_batch(
         &self,
         ids: &[String],
     ) -> Result<usize, AppError> {
+        if ids.is_empty() {
+            return Ok(0);
+        }
+
         let mut conn = self.pool.get()?;
         let tx = conn.transaction()?;
 
-        let mut total_deleted = 0;
-        for id in ids {
-            // 查询该存档关联的 chunk hashes
-            let chunk_hashes: Vec<String> = {
-                let mut stmt = tx.prepare(
-                    "SELECT chunk_hash FROM archive_chunks \
-                     WHERE archive_id = ?1 ORDER BY chunk_index",
-                )?;
-                let hashes: Vec<String> = stmt
-                    .query_map(rusqlite::params![id], |row| {
-                        row.get::<_, String>(0)
-                    })?
-                    .map(|r| r.map_err(crate::error::AppError::Db))
-                    .collect::<Result<Vec<_>, _>>()?;
-                hashes
-            };
+        let in_clause = ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let id_params: Vec<rusqlite::types::Value> = ids
+            .iter()
+            .map(|id| rusqlite::types::Value::Text(id.clone()))
+            .collect();
 
+        // Step 1: 一次性获取所有 archive_chunks 关联（300+ 次查询 → 1 次）
+        let mut stmt = tx.prepare(&format!(
+            "SELECT chunk_hash FROM archive_chunks WHERE archive_id IN ({})",
+            in_clause
+        ))?;
+        let all_chunk_hashes: Vec<String> = stmt
+            .query_map(rusqlite::params_from_iter(id_params.iter()), |row| {
+                row.get::<_, String>(0)
+            })?
+            .map(|r| r.map_err(crate::error::AppError::Db))
+            .collect::<Result<Vec<_>, _>>()?;
+        drop(stmt);
+
+        // Step 2: 一次性删除 archive_chunks（100 次 DELETE → 1 次）
+        let sql = format!(
+            "DELETE FROM archive_chunks WHERE archive_id IN ({})",
+            in_clause
+        );
+        tx.execute(&sql, rusqlite::params_from_iter(id_params.iter()))?;
+
+        // Step 3: 一次性删除 archives（100 次 DELETE → 1 次）
+        let sql = format!("DELETE FROM archives WHERE id IN ({})", in_clause);
+        let total_deleted =
+            tx.execute(&sql, rusqlite::params_from_iter(id_params.iter()))?;
+
+        // Step 4: 批量减少 chunk ref_count（去重后逐 hash 更新）
+        let mut unique_hashes: std::collections::HashSet<String> =
+            std::collections::HashSet::new();
+        for hash in &all_chunk_hashes {
+            unique_hashes.insert(hash.clone());
+        }
+        for hash in &unique_hashes {
             tx.execute(
-                "DELETE FROM archive_chunks WHERE archive_id = ?1",
-                rusqlite::params![id],
+                "UPDATE chunks SET ref_count = MAX(0, ref_count - 1) \
+                 WHERE hash = ?1",
+                rusqlite::params![hash],
             )?;
-            let deleted = tx.execute(
-                "DELETE FROM archives WHERE id = ?1",
-                rusqlite::params![id],
-            )?;
-
-            for hash in &chunk_hashes {
-                tx.execute(
-                    "UPDATE chunks SET ref_count = MAX(0, ref_count - 1) \
-                     WHERE hash = ?1",
-                    rusqlite::params![hash],
-                )?;
-            }
-
-            total_deleted += deleted;
         }
 
         tx.commit()?;
@@ -370,26 +397,32 @@ impl ArchiveService {
             })
             .collect();
 
-        // 递归收集每个根节点及其所有后代
+        // 迭代收集每个根节点及其所有后代（BFS，避免递归栈溢出）
         let mut result = Vec::new();
         for root in &roots {
-            self.collect_descendants_recursive(root, &mut result)?;
+            result.extend(self.collect_descendants_iterative(root)?);
         }
 
         Ok(result)
     }
 
-    fn collect_descendants_recursive(
+    /// 迭代收集归档节点及其所有后代（BFS）
+    fn collect_descendants_iterative(
         &self,
-        archive: &Archive,
-        result: &mut Vec<Archive>,
-    ) -> Result<(), AppError> {
-        result.push(archive.clone());
-        let children = db::get_children(&self.pool, &archive.id)?;
-        for child in children {
-            self.collect_descendants_recursive(&child, result)?;
+        root: &Archive,
+    ) -> Result<Vec<Archive>, AppError> {
+        let mut result = Vec::new();
+        let mut queue = VecDeque::new();
+        queue.push_back(root.clone());
+
+        while let Some(current) = queue.pop_front() {
+            result.push(current.clone());
+            let children = db::get_children(&self.pool, &current.id)?;
+            for child in children {
+                queue.push_back(child);
+            }
         }
-        Ok(())
+        Ok(result)
     }
 
     /// 获取统计信息
@@ -424,6 +457,27 @@ impl ArchiveService {
         }
 
         Ok(corrupted)
+    }
+
+    /// 检测 parent_id 链是否存在循环引用
+    /// 从 target_parent_id 开始沿 parent_id 向上遍历，
+    /// 如果出现重复节点则说明存在环
+    fn has_circular_reference(
+        &self,
+        target_parent_id: &str,
+    ) -> Result<bool, AppError> {
+        let mut current = Some(target_parent_id.to_string());
+        let mut visited = std::collections::HashSet::new();
+
+        while let Some(pid) = current {
+            if visited.contains(&pid) {
+                return Ok(true);
+            }
+            visited.insert(pid.clone());
+            let parent = db::get_archive(&self.pool, &pid)?;
+            current = parent.and_then(|a| a.parent_id);
+        }
+        Ok(false)
     }
 
     fn read_chunks_as_text(

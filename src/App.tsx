@@ -18,7 +18,7 @@ import './styles/animations.css';
 type View = 'list' | 'timeline' | 'diff' | 'graph';
 
 export default function App() {
-  const { fetchArchives, fetchStatistics, statistics, setupEventListeners, view, setView } = useArchiveStore();
+  const { fetchArchives, fetchStatistics, statistics, view, setView } = useArchiveStore();
   const [isMini, setIsMini] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showLogViewer, setShowLogViewer] = useState(false);
@@ -34,11 +34,11 @@ export default function App() {
     fetchStatistics();
   }, [fetchArchives, fetchStatistics]);
 
-  // 设置事件监听
+  // 设置事件监听 — 使用 getState() 避免依赖变化导致重复注册
   useEffect(() => {
-    const cleanup = setupEventListeners();
+    const cleanup = useArchiveStore.getState().setupEventListeners();
     return cleanup;
-  }, [setupEventListeners]);
+  }, []);
 
   // 统一使用 store 的 view 状态
   const handleViewChange = useCallback((newView: View) => {

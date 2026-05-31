@@ -9,6 +9,7 @@ import {
   ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import { open } from '@tauri-apps/api/dialog';
+import { toast } from '../../stores/toastStore';
 
 export function ArchiveList() {
   const {
@@ -138,7 +139,11 @@ export function ArchiveList() {
               onDelete={() => setDeleteTarget(archive.id)}
               onCompare={() => {
                 if (selectedArchive && selectedArchive.id !== archive.id) {
-                  compareArchives(selectedArchive.id, archive.id);
+                  if (selectedArchive.file_path === archive.file_path) {
+                    compareArchives(selectedArchive.id, archive.id);
+                  } else {
+                    toast.warning('只能对比同一文件的不同版本');
+                  }
                 }
               }}
               onToggleSelect={() => toggleSelect(archive.id)}

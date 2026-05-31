@@ -1,6 +1,9 @@
 use serde::Serialize;
 use similar::{ChangeTag, TextDiff};
 
+/// Maximum number of changes per hunk before splitting.
+const HUNK_MAX_LINES: usize = 20;
+
 #[derive(Debug, Clone, Serialize)]
 pub struct DiffResult {
     pub hunks: Vec<DiffHunk>,
@@ -98,8 +101,8 @@ pub fn compute_diff(old_text: &str, new_text: &str) -> DiffResult {
         current_hunk.old_lines += 1;
         current_hunk.new_lines += 1;
 
-        // Split into hunks of ~20 lines
-        if current_hunk.changes.len() >= 20 && change.tag() == ChangeTag::Equal
+        if current_hunk.changes.len() >= HUNK_MAX_LINES
+            && change.tag() == ChangeTag::Equal
         {
             hunks.push(current_hunk.clone());
             current_hunk = DiffHunk {
