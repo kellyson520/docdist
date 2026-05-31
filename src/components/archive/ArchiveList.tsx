@@ -155,11 +155,11 @@ export function ArchiveList() {
               onSelect={() => selectArchive(archive)}
               onRestore={() => restoreArchive(archive.id)}
               onDelete={() => setDeleteTarget(archive.id)}
-              onCompare={async () => {
+              onCompare={() => {
                 if (selectedArchive && selectedArchive.id !== archive.id) {
                   if (selectedArchive.file_path === archive.file_path) {
                     setView('enhanced-diff');
-                    await compareArchivesEnhanced(selectedArchive.id, archive.id);
+                    compareArchivesEnhanced(selectedArchive.id, archive.id);
                   } else {
                     toast.warning('只能对比同一文件的不同版本');
                   }

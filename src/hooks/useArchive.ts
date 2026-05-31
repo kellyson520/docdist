@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useArchiveStore } from '../stores/archiveStore';
 import { shallow } from 'zustand/shallow';
 import type { Archive } from '../types';
@@ -37,9 +37,12 @@ export function useArchive() {
 
   const filteredArchives = archives;
 
-  const archiveByFile = (filePath: string): Archive[] => {
-    return archives.filter((a) => a.file_path === filePath);
-  };
+  const archiveByFile = useCallback(
+    (filePath: string): Archive[] => {
+      return archives.filter((a) => a.file_path === filePath);
+    },
+    [archives],
+  );
 
   const totalSize = useMemo(
     () => archives.reduce((sum, a) => sum + a.file_size, 0),
@@ -76,3 +79,4 @@ export function useArchive() {
     selectedArchives,
   };
 }
+

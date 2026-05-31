@@ -210,10 +210,10 @@ export function DiffViewer() {
                       }`}
                     >
                       <span className="w-10 text-right pr-3 text-gray-400 dark:text-gray-600 select-none flex-shrink-0">
-                        {change.old_line || ''}
+                        {change.old_line ?? ''}
                       </span>
                       <span className="w-10 text-right pr-3 text-gray-400 dark:text-gray-600 select-none flex-shrink-0">
-                        {change.new_line || ''}
+                        {change.new_line ?? ''}
                       </span>
                       <span className="w-5 text-center select-none flex-shrink-0 font-bold">
                         {change.change_type === 'add' ? '+' : change.change_type === 'delete' ? '-' : ' '}

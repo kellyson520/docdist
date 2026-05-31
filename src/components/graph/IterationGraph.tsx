@@ -188,11 +188,11 @@ export function IterationGraph() {
   }, []);
 
   const handleZoomIn = useCallback(() => {
-    setZoom(prev => Math.min(prev + 0.1, 1.5));
+    setZoom(prev => Math.min(Math.round((prev + 0.1) * 10) / 10, 1.5));
   }, []);
 
   const handleZoomOut = useCallback(() => {
-    setZoom(prev => Math.max(prev - 0.1, 0.5));
+    setZoom(prev => Math.max(Math.round((prev - 0.1) * 10) / 10, 0.5));
   }, []);
 
   return (

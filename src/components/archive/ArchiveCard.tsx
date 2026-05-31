@@ -21,6 +21,21 @@ interface ArchiveCardProps {
   onToggleSelect?: () => void;
 }
 
+const FILE_COLOR_MAP: Record<string, string> = {
+  rs: 'text-orange-500 bg-orange-50 dark:bg-orange-900/20',
+  ts: 'text-blue-500 bg-blue-50 dark:bg-blue-900/20',
+  tsx: 'text-cyan-500 bg-cyan-50 dark:bg-cyan-900/20',
+  js: 'text-yellow-500 bg-yellow-50 dark:bg-yellow-900/20',
+  jsx: 'text-sky-500 bg-sky-50 dark:bg-sky-900/20',
+  py: 'text-green-500 bg-green-50 dark:bg-green-900/20',
+  md: 'text-gray-500 bg-gray-50 dark:bg-gray-700',
+  json: 'text-amber-500 bg-amber-50 dark:bg-amber-900/20',
+  html: 'text-red-500 bg-red-50 dark:bg-red-900/20',
+  css: 'text-purple-500 bg-purple-50 dark:bg-purple-900/20',
+  go: 'text-teal-500 bg-teal-50 dark:bg-teal-900/20',
+  txt: 'text-gray-400 bg-gray-50 dark:bg-gray-700',
+};
+
 function ArchiveCardInner({
   archive,
   isSelected,
@@ -48,24 +63,10 @@ function ArchiveCardInner({
     return () => document.removeEventListener('mousedown', handleMouseDown);
   }, [showMenu]);
 
-  // 文件类型图标颜色
+  // 文件类型图标颜色（模块级常量，避免每次渲染重建）
   const getFileColor = (name: string) => {
     const ext = name.split('.').pop()?.toLowerCase() || '';
-    const colors: Record<string, string> = {
-      rs: 'text-orange-500 bg-orange-50 dark:bg-orange-900/20',
-      ts: 'text-blue-500 bg-blue-50 dark:bg-blue-900/20',
-      tsx: 'text-cyan-500 bg-cyan-50 dark:bg-cyan-900/20',
-      js: 'text-yellow-500 bg-yellow-50 dark:bg-yellow-900/20',
-      jsx: 'text-sky-500 bg-sky-50 dark:bg-sky-900/20',
-      py: 'text-green-500 bg-green-50 dark:bg-green-900/20',
-      md: 'text-gray-500 bg-gray-50 dark:bg-gray-700',
-      json: 'text-amber-500 bg-amber-50 dark:bg-amber-900/20',
-      html: 'text-red-500 bg-red-50 dark:bg-red-900/20',
-      css: 'text-purple-500 bg-purple-50 dark:bg-purple-900/20',
-      go: 'text-teal-500 bg-teal-50 dark:bg-teal-900/20',
-      txt: 'text-gray-400 bg-gray-50 dark:bg-gray-700',
-    };
-    return colors[ext] || 'text-gray-400 bg-gray-50 dark:bg-gray-700';
+    return FILE_COLOR_MAP[ext] || 'text-gray-400 bg-gray-50 dark:bg-gray-700';
   };
 
   const fileColor = getFileColor(archive.file_name);
@@ -214,16 +215,15 @@ function ArchiveCardInner({
   );
 }
 
-/** 用 React.memo 包裹，避免列表中不必要的重渲染 */
+/**
+ * 用 React.memo 包裹，避免列表中不必要的重渲染。
+ * 仅比较数据 props：callback 引用由父组件在 map 中创建，每次渲染都是新引用，
+ * 比较它们毫无意义且导致 memo 完全失效。
+ */
 export const ArchiveCard = memo(ArchiveCardInner, (prev, next) => {
   return (
     prev.archive === next.archive &&
     prev.isSelected === next.isSelected &&
-    prev.isMultiSelected === next.isMultiSelected &&
-    prev.onSelect === next.onSelect &&
-    prev.onRestore === next.onRestore &&
-    prev.onDelete === next.onDelete &&
-    prev.onCompare === next.onCompare &&
-    prev.onToggleSelect === next.onToggleSelect
+    prev.isMultiSelected === next.isMultiSelected
   );
 });

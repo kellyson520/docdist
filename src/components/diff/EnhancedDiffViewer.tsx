@@ -29,6 +29,7 @@ export function EnhancedDiffViewer() {
     try {
       await navigator.clipboard.writeText(text);
       setCopied(true);
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
       copyTimerRef.current = setTimeout(() => setCopied(false), 2000);
     } catch (err) {
       console.error('复制失败:', err);

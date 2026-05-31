@@ -248,11 +248,26 @@ pub async fn read_log_file(
         return Ok(vec![]);
     }
 
-    let content = std::fs::read_to_string(&log_path)
-        .map_err(|e| format!("读取日志文件失败: {}", e))?;
+    // 尾部读取：仅读取文件末尾约 max_lines * 200 字节，避免大文件 OOM
+    let file_size = std::fs::metadata(&log_path)
+        .map(|m| m.len() as usize)
+        .unwrap_or(0);
+    let read_limit = max_lines * 200; // 假设每行平均约 200 字节
+    let skip = file_size.saturating_sub(read_limit);
 
-    let all_lines: Vec<String> =
-        content.lines().map(|s| s.to_string()).collect();
+    use std::io::{BufRead, Seek, SeekFrom};
+    let file = std::fs::File::open(&log_path)
+        .map_err(|e| format!("读取日志文件失败: {}", e))?;
+    let mut reader = std::io::BufReader::new(file);
+    if skip > 0 {
+        reader
+            .seek(SeekFrom::Start(skip as u64))
+            .map_err(|e| format!("读取日志文件失败: {}", e))?;
+        // 跳过被截断的第一行
+        let mut discard = String::new();
+        let _ = reader.read_line(&mut discard);
+    }
+    let all_lines: Vec<String> = reader.lines().map_while(Result::ok).collect();
     let total = all_lines.len();
     let start = total.saturating_sub(max_lines);
 
@@ -273,7 +288,7 @@ pub async fn update_config(
     new_config: AppConfig,
 ) -> Result<(), AppError> {
     let mut config = state.config.lock().unwrap_or_else(|e| e.into_inner());
-    *config = new_config.clone();
+    *config = new_config;
 
     // 保存到磁盘
     config.save(&state.data_dir)?;

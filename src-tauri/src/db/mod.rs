@@ -394,7 +394,8 @@ pub fn get_archives_paginated(
         count_stmt.query_row(count_params_refs.as_slice(), |r| r.get(0))?;
 
     // Get paginated results — 使用参数绑定而非 format! 拼接
-    let offset = (page - 1) * page_size;
+    // 使用 u64 避免 (page - 1) * page_size 在 u32 范围内溢出
+    let offset: u64 = (page as u64 - 1) * page_size as u64;
     sql.push_str(" ORDER BY created_at DESC LIMIT ? OFFSET ?");
 
     // LIMIT/OFFSET 参数追加到 param_values

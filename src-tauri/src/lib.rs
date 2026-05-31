@@ -135,7 +135,7 @@ pub fn run() {
             service,
             watcher: Mutex::new(file_watcher),
             config: Mutex::new(app_config),
-            data_dir: data_dir.clone(),
+            data_dir,
         })
         .setup(move |app| {
             // 启动时自动恢复 watcher 监控（如果配置中 enabled = true）
