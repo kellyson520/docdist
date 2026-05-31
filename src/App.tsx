@@ -6,20 +6,29 @@ import { DiffViewer } from './components/diff/DiffViewer';
 import { IterationGraph } from './components/graph/IterationGraph';
 import { MiniMode } from './components/mini/MiniMode';
 import { ThemeToggle } from './components/common/ThemeToggle';
-import { FolderOpen, Clock, GitCompare, GitBranch, Minimize2 } from 'lucide-react';
+import { WatcherPanel } from './components/watcher/WatcherPanel';
+import { SettingsPanel } from './components/settings/SettingsPanel';
+import { FolderOpen, Clock, GitCompare, GitBranch, Minimize2, Settings } from 'lucide-react';
 import './styles/themes.css';
 
 type View = 'list' | 'timeline' | 'diff' | 'graph';
 
 export default function App() {
-  const { fetchArchives, fetchStatistics, statistics } = useArchiveStore();
+  const { fetchArchives, fetchStatistics, statistics, setupEventListeners } = useArchiveStore();
   const [isMini, setIsMini] = useState(false);
   const [activeView, setActiveView] = useState<View>('list');
+  const [showSettings, setShowSettings] = useState(false);
 
   useEffect(() => {
     fetchArchives();
     fetchStatistics();
   }, [fetchArchives, fetchStatistics]);
+
+  // 设置事件监听
+  useEffect(() => {
+    const cleanup = setupEventListeners();
+    return cleanup;
+  }, [setupEventListeners]);
 
   const navItems = [
     { id: 'list' as View, label: '存档管理', icon: FolderOpen },
@@ -60,11 +69,11 @@ export default function App() {
             <button
               key={id}
               onClick={() => setActiveView(id)}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition
-                ${activeView === id
+              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition ${
+                activeView === id
                   ? 'bg-primary-50 text-primary-600 font-medium'
                   : 'text-gray-600 hover:bg-gray-50 hover:text-gray-800'
-                }`}
+              }`}
             >
               <Icon className="w-4 h-4" />
               {label}
@@ -75,46 +84,62 @@ export default function App() {
         {/* Stats */}
         {statistics && (
           <div className="p-3 border-t border-gray-100">
-            <div className="grid grid-cols-2 gap-2 text-center">
-              <div className="p-2 bg-gray-50 rounded-lg">
-                <p className="text-lg font-bold text-primary-600">{statistics.total_archives}</p>
-                <p className="text-xs text-gray-400">存档</p>
-              </div>
-              <div className="p-2 bg-gray-50 rounded-lg">
-                <p className="text-lg font-bold text-primary-600">{statistics.unique_files}</p>
-                <p className="text-xs text-gray-400">文件</p>
-              </div>
+            <div className="text-xs text-gray-400 space-y-1">
+              <p>📦 存档数：{statistics.total_archives}</p>
+              <p>📁 文件数：{statistics.unique_files}</p>
+              <p>💾 总大小：{formatBytes(statistics.total_size)}</p>
             </div>
           </div>
         )}
 
-        {/* Theme Toggle */}
-        <div className="p-3 border-t border-gray-100">
+        {/* Bottom actions */}
+        <div className="p-3 border-t border-gray-100 flex items-center justify-between">
           <ThemeToggle />
-        </div>
-
-        {/* Mini mode toggle */}
-        <div className="p-3 border-t border-gray-100">
-          <button
-            onClick={() => setIsMini(true)}
-            className="w-full flex items-center justify-center gap-2 px-3 py-2 text-sm text-gray-500 hover:text-gray-700 hover:bg-gray-50 rounded-lg transition"
-          >
-            <Minimize2 className="w-4 h-4" />
-            Mini 模式
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setShowSettings(true)}
+              className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition"
+              title="设置"
+            >
+              <Settings className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setIsMini(true)}
+              className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition"
+              title="迷你模式"
+            >
+              <Minimize2 className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* Main Content */}
-      <div className="flex-1 flex flex-col min-w-0">
-        {/* Content Area */}
-        <div className="flex-1 overflow-hidden">
+      {/* Main content */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {/* Content area */}
+        <div className="flex-1 overflow-auto p-6">
           {activeView === 'list' && <ArchiveList />}
           {activeView === 'timeline' && <TimelineView />}
           {activeView === 'diff' && <DiffViewer />}
           {activeView === 'graph' && <IterationGraph />}
         </div>
       </div>
+
+      {/* Right sidebar — Watcher Panel */}
+      <div className="w-72 bg-gray-50 border-l border-gray-200 overflow-y-auto p-3 space-y-3">
+        <WatcherPanel />
+      </div>
+
+      {/* Settings modal */}
+      {showSettings && <SettingsPanel onClose={() => setShowSettings(false)} />}
     </div>
   );
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
 }

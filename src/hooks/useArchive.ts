@@ -1,5 +1,5 @@
-import { useArchiveStore } from "../stores/archiveStore";
-import type { Archive } from "../types";
+import { useArchiveStore } from '../stores/archiveStore';
+import type { Archive } from '../types';
 
 export function useArchive() {
   const store = useArchiveStore();
@@ -14,11 +14,16 @@ export function useArchive() {
 
   const uniqueFiles = new Set(store.archives.map((a) => a.file_path)).size;
 
+  const selectedArchives = store.archives.filter((a) =>
+    store.selectedIds.has(a.id)
+  );
+
   return {
     ...store,
     filteredArchives,
     archiveByFile,
     totalSize,
     uniqueFiles,
+    selectedArchives,
   };
 }

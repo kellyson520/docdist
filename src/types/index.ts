@@ -41,4 +41,7 @@ export interface Statistics {
   total_archives: number;
   total_size: number;
   unique_files: number;
+  total_chunks?: number;
+  storage_chunks?: number;
+  storage_bytes?: number;
 }

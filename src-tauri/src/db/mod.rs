@@ -394,3 +394,94 @@ pub fn get_storage_stats(
         "avg_refs": avg_refs,
     }))
 }
+
+/// 插入或更新 chunk（upsert，增加 ref_count）
+pub fn upsert_chunk(
+    pool: &DbPool,
+    hash: &str,
+    size: usize,
+) -> Result<(), crate::error::AppError> {
+    let conn = pool.get()?;
+    let storage_path = format!("{}/{}", &hash[..2], hash);
+    conn.execute(
+        "INSERT INTO chunks (hash, size, ref_count, storage_path)
+         VALUES (?1, ?2, 1, ?3)
+         ON CONFLICT(hash) DO UPDATE SET ref_count = ref_count + 1",
+        params![hash, size as i64, storage_path],
+    )?;
+    Ok(())
+}
+
+/// 减少 chunk 引用计数，如果归零则标记可清理
+pub fn decrement_chunk_ref(
+    pool: &DbPool,
+    hash: &str,
+) -> Result<(), crate::error::AppError> {
+    let conn = pool.get()?;
+    conn.execute(
+        "UPDATE chunks SET ref_count = MAX(0, ref_count - 1) WHERE hash = ?1",
+        params![hash],
+    )?;
+    Ok(())
+}
+
+/// 删除存档的 chunks 关联记录
+pub fn delete_archive_chunks(
+    pool: &DbPool,
+    archive_id: &str,
+) -> Result<(), crate::error::AppError> {
+    let conn = pool.get()?;
+    conn.execute(
+        "DELETE FROM archive_chunks WHERE archive_id = ?1",
+        params![archive_id],
+    )?;
+    Ok(())
+}
+
+/// 删除存档记录本身
+pub fn delete_archive_record(
+    pool: &DbPool,
+    id: &str,
+) -> Result<(), crate::error::AppError> {
+    let conn = pool.get()?;
+    conn.execute("DELETE FROM archives WHERE id = ?1", params![id])?;
+    Ok(())
+}
+
+/// 获取所有活跃的 chunk hash（用于孤儿清理）
+pub fn get_all_chunk_hashes(
+    pool: &DbPool,
+) -> Result<Vec<String>, crate::error::AppError> {
+    let conn = pool.get()?;
+    let mut stmt =
+        conn.prepare("SELECT DISTINCT chunk_hash FROM archive_chunks")?;
+    let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+    Ok(rows.filter_map(|r| r.ok()).collect())
+}
+
+/// 获取所有不被引用的 chunks（ref_count = 0）
+pub fn get_unreferenced_chunks(
+    pool: &DbPool,
+) -> Result<Vec<String>, crate::error::AppError> {
+    let conn = pool.get()?;
+    let mut stmt = conn.prepare(
+        "SELECT hash FROM chunks WHERE ref_count <= 0",
+    )?;
+    let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+    Ok(rows.filter_map(|r| r.ok()).collect())
+}
+
+/// 获取指定存档的详细信息（含 chunks）
+pub fn get_archive_detail(
+    pool: &DbPool,
+    id: &str,
+) -> Result<Option<(Archive, Vec<String>)>, crate::error::AppError> {
+    let archive = get_archive(pool, id)?;
+    match archive {
+        Some(a) => {
+            let chunks = get_archive_chunks(pool, id)?;
+            Ok(Some((a, chunks)))
+        }
+        None => Ok(None),
+    }
+}
