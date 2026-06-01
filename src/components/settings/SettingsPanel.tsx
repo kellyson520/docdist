@@ -1,5 +1,6 @@
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState } from 'react';
 import { useArchiveStore, type AppConfig } from '../../stores/archiveStore';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 import { shallow } from 'zustand/shallow';
 import { Settings, Save, RotateCcw, Trash2, Shield } from 'lucide-react';
 import { formatFileSize } from '../../utils/format';
@@ -61,39 +62,15 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
     setVerifying(false);
   };
 
-  const panelRef = useRef<HTMLDivElement>(null);
-
-  const handleKeyDown = useCallback((e: KeyboardEvent) => {
-    if (e.key === 'Escape') {
-      onClose();
-    }
-    if (e.key === 'Tab' && panelRef.current) {
-      const focusable = Array.from(
-        panelRef.current.querySelectorAll<HTMLElement>(
-          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
-        ),
-      );
-      if (focusable.length === 0) return;
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (e.shiftKey) {
-        if (document.activeElement === first) {
-          e.preventDefault();
-          last.focus();
-        }
-      } else {
-        if (document.activeElement === last) {
-          e.preventDefault();
-          first.focus();
-        }
-      }
-    }
-  }, [onClose]);
+  const panelRef = useFocusTrap();
 
   useEffect(() => {
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [handleKeyDown]);
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [onClose]);
 
   if (!localConfig) {
     return (

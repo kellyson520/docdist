@@ -1,5 +1,6 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { TagBadge } from '../common/TagBadge';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 import { X, Plus } from 'lucide-react';
 
 interface EditArchiveDialogProps {
@@ -14,42 +15,18 @@ export function EditArchiveDialog({ initialNote, initialTags, onConfirm, onCance
   const [tags, setTags] = useState<string[]>(initialTags);
   const [tagInput, setTagInput] = useState('');
 
-  const dialogRef = useRef<HTMLDivElement>(null);
+  const dialogRef = useFocusTrap();
 
   const onCancelRef = useRef(onCancel);
   onCancelRef.current = onCancel;
 
-  const handleKeyDown = useCallback((e: KeyboardEvent) => {
-    if (e.key === 'Escape') {
-      onCancelRef.current();
-    }
-    if (e.key === 'Tab' && dialogRef.current) {
-      const focusable = Array.from(
-        dialogRef.current.querySelectorAll<HTMLElement>(
-          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
-        ),
-      );
-      if (focusable.length === 0) return;
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (e.shiftKey) {
-        if (document.activeElement === first) {
-          e.preventDefault();
-          last.focus();
-        }
-      } else {
-        if (document.activeElement === last) {
-          e.preventDefault();
-          first.focus();
-        }
-      }
-    }
-  }, []);
-
   useEffect(() => {
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleKeyDown]);
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onCancelRef.current();
+    };
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, []);
 
   const addTag = () => {
     const tag = tagInput.trim();

@@ -1,12 +1,6 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef } from 'react';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 
-function getFocusableElements(container: HTMLElement): HTMLElement[] {
-  return Array.from(
-    container.querySelectorAll<HTMLElement>(
-      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
-    ),
-  );
-}
 
 interface ConfirmDialogProps {
   open: boolean;
@@ -17,33 +11,10 @@ interface ConfirmDialogProps {
 }
 
 export function ConfirmDialog({ open, title, message, onConfirm, onCancel }: ConfirmDialogProps) {
-  const dialogRef = useRef<HTMLDivElement>(null);
+  const dialogRef = useFocusTrap(open);
 
   const onCancelRef = useRef(onCancel);
   onCancelRef.current = onCancel;
-
-  const handleKeyDown = useCallback((e: KeyboardEvent) => {
-    if (e.key === 'Escape' && open) {
-      onCancelRef.current();
-    }
-    if (e.key === 'Tab' && open && dialogRef.current) {
-      const focusable = getFocusableElements(dialogRef.current);
-      if (focusable.length === 0) return;
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (e.shiftKey) {
-        if (document.activeElement === first) {
-          e.preventDefault();
-          last.focus();
-        }
-      } else {
-        if (document.activeElement === last) {
-          e.preventDefault();
-          first.focus();
-        }
-      }
-    }
-  }, [open]);
 
   // Focus the confirm button on open for keyboard users
   const confirmBtnRef = useRef<HTMLButtonElement>(null);
@@ -55,10 +26,12 @@ export function ConfirmDialog({ open, title, message, onConfirm, onCancel }: Con
 
   useEffect(() => {
     if (!open) return;
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [open, handleKeyDown]);
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onCancelRef.current();
+    };
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [open]);
 
   if (!open) return null;
 

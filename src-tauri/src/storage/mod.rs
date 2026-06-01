@@ -25,6 +25,14 @@ pub fn store_file(
 ) -> Result<(Vec<String>, Vec<usize>, u64, String), crate::error::AppError> {
     use std::io::Read;
 
+    // 防止符号链接攻击：拒绝归档符号链接文件
+    let metadata = std::fs::symlink_metadata(file_path)?;
+    if metadata.file_type().is_symlink() {
+        return Err(crate::error::AppError::Other(
+            "不允许归档符号链接文件".to_string(),
+        ));
+    }
+
     let mut file = std::fs::File::open(file_path)?;
     let mut buffer = vec![0u8; chunk_size];
     let mut chunk_hashes = Vec::new();

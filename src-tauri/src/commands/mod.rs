@@ -257,7 +257,7 @@ pub async fn read_log_file(
     state: State<'_, AppState>,
     lines: Option<usize>,
 ) -> Result<Vec<String>, AppError> {
-    let max_lines = lines.unwrap_or(100);
+    let max_lines = lines.unwrap_or(100).min(10000); // Cap at 10000 lines
     let log_path = state.data_dir.join("logs").join("docdist.log");
 
     if !log_path.exists() {
@@ -304,8 +304,15 @@ pub async fn update_config(
     new_config: AppConfig,
 ) -> Result<(), AppError> {
     // 配置验证：关键字段不能为零
+    const MAX_CHUNK_SIZE: usize = 256 * 1024 * 1024; // 256MB
     if new_config.storage.chunk_size == 0 {
         return Err(AppError::Other("chunk_size 不能为 0".to_string()));
+    }
+    if new_config.storage.chunk_size > MAX_CHUNK_SIZE {
+        return Err(AppError::Other(format!(
+            "chunk_size 不能超过 {}MB",
+            MAX_CHUNK_SIZE / 1024 / 1024
+        )));
     }
 
     // 先保存到磁盘，失败则不更新内存状态，保证一致性
