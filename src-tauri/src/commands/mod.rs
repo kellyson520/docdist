@@ -437,13 +437,16 @@ pub async fn restore_directory(
     for archive in latest_per_file.values() {
         let output_path =
             std::path::PathBuf::from(&output_dir).join(&archive.file_name);
-        
+
         // 防止 zip-slip 路径遍历攻击
         match output_path.parent() {
             Some(parent) => {
                 if let Ok(canonical_parent) = std::fs::canonicalize(parent) {
                     if !canonical_parent.starts_with(&output_dir_canonical) {
-                        errors.push(format!("{}: 路径安全检查失败", archive.file_path));
+                        errors.push(format!(
+                            "{}: 路径安全检查失败",
+                            archive.file_path
+                        ));
                         skipped_count += 1;
                         continue;
                     }
@@ -455,7 +458,7 @@ pub async fn restore_directory(
                 continue;
             }
         }
-        
+
         match state.service.restore_archive(
             &archive.id,
             Some(output_path.to_str().unwrap_or("")),
