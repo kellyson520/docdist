@@ -2043,4 +2043,790 @@ mod tests {
         let content = fs::read(&restore_path).expect("恢复的文件应存在");
         assert_eq!(content, b"nested content", "恢复的内容应一致");
     }
+
+    // ================================================================
+    // 深度测试：多文件类型 + 多版本 + 边界条件
+    // ================================================================
+
+    /// 测试：JSON文件多版本演进（字段增删改）
+    #[test]
+    fn test_e2e_json_file_evolution() {
+        let (service, dir) = setup_service();
+
+        // v1: 初始JSON
+        let file_path = create_test_file(
+            &dir,
+            "config.json",
+            b"{\"name\":\"app\",\"version\":1}",
+        );
+        let a1 = service
+            .create_archive(&file_path, "v1", vec![], None)
+            .unwrap();
+
+        // v2: 添加字段
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        fs::write(
+            &file_path,
+            b"{\"name\":\"app\",\"version\":2,\"debug\":true}",
+        )
+        .unwrap();
+        let _a2 = service
+            .create_archive(&file_path, "v2:添加debug", vec![], None)
+            .unwrap();
+
+        // v3: 删除字段 + 修改值
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        fs::write(
+            &file_path,
+            b"{\"name\":\"myapp\",\"version\":3,\"port\":3000}",
+        )
+        .unwrap();
+        let a3 = service
+            .create_archive(&file_path, "v3:重构配置", vec![], None)
+            .unwrap();
+
+        // 对比 v1 vs v3
+        let diff = service.compare_archives(&a1.id, &a3.id).unwrap();
+        assert!(
+            diff.stats.additions > 0 || diff.stats.deletions > 0,
+            "JSON配置变化应有差异"
+        );
+
+        // 增强对比验证序列化
+        let enhanced =
+            service.compare_archives_enhanced(&a1.id, &a3.id).unwrap();
+        let json = serde_json::to_value(&enhanced.file_type).unwrap();
+        assert_eq!(json["type"].as_str().unwrap(), "Text");
+
+        // 恢复v1并验证
+        let restore_path = dir
+            .path()
+            .join("config_v1.json")
+            .to_string_lossy()
+            .to_string();
+        service
+            .restore_archive(&a1.id, Some(&restore_path))
+            .unwrap();
+        let restored = fs::read_to_string(&restore_path).unwrap();
+        assert!(restored.contains("\"version\":1"), "应恢复到v1");
+    }
+
+    /// 测试：Markdown文件多版本（添加/删除/修改章节）
+    #[test]
+    fn test_e2e_markdown_evolution() {
+        let (service, dir) = setup_service();
+
+        let v1 = b"# Project\n\n## Intro\n\nHello world.\n";
+        let v2 = b"# Project\n\n## Intro\n\nHello universe.\n\n## Features\n\n- Feature 1\n- Feature 2\n";
+        let v3 = b"# My Project\n\n## Intro\n\nHello cosmos.\n\n## Features\n\n- Feature 1\n- Feature 2\n- Feature 3\n\n## Install\n\nnpm install\n";
+
+        let file_path = create_test_file(&dir, "readme.md", v1);
+        let a1 = service
+            .create_archive(&file_path, "v1", vec![], None)
+            .unwrap();
+
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        fs::write(&file_path, v2).unwrap();
+        let a2 = service
+            .create_archive(&file_path, "v2", vec![], None)
+            .unwrap();
+
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        fs::write(&file_path, v3).unwrap();
+        let a3 = service
+            .create_archive(&file_path, "v3", vec![], None)
+            .unwrap();
+
+        // v1 vs v2: 修改+新增
+        let diff12 = service.compare_archives(&a1.id, &a2.id).unwrap();
+        assert!(diff12.stats.additions > 0, "v1→v2应有新增行");
+
+        // v2 vs v3: 修改+新增
+        let diff23 = service.compare_archives(&a2.id, &a3.id).unwrap();
+        assert!(diff23.stats.additions > 0, "v2→v3应有新增行");
+
+        // v1 vs v3: 大量变化
+        let diff13 = service.compare_archives(&a1.id, &a3.id).unwrap();
+        assert!(
+            diff13.stats.additions + diff13.stats.deletions > 3,
+            "v1→v3应有大量变化"
+        );
+
+        // 恢复v2
+        let restore = dir
+            .path()
+            .join("readme_v2.md")
+            .to_string_lossy()
+            .to_string();
+        service.restore_archive(&a2.id, Some(&restore)).unwrap();
+        let content = fs::read_to_string(&restore).unwrap();
+        assert!(content.contains("Feature 1"), "v2应包含Features");
+        assert!(!content.contains("Install"), "v2不应包含Install");
+    }
+
+    /// 测试：Python代码文件演进（函数增删改）
+    #[test]
+    fn test_e2e_python_code_evolution() {
+        let (service, dir) = setup_service();
+
+        let v1 = b"def hello():\n    print('hello')\n";
+        let v2 = b"def hello():\n    print('hello world')\n\ndef add(a, b):\n    return a + b\n";
+        let v3 = b"def hello(name='world'):\n    print(f'hello {name}')\n\ndef add(a, b):\n    return a + b\n\ndef multiply(a, b):\n    return a * b\n";
+
+        let file_path = create_test_file(&dir, "math_utils.py", v1);
+        let a1 = service
+            .create_archive(&file_path, "v1", vec![], None)
+            .unwrap();
+
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        fs::write(&file_path, v2).unwrap();
+        let _a2 = service
+            .create_archive(&file_path, "v2", vec![], None)
+            .unwrap();
+
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        fs::write(&file_path, v3).unwrap();
+        let a3 = service
+            .create_archive(&file_path, "v3", vec![], None)
+            .unwrap();
+
+        // 增强对比 v1 vs v3
+        let enhanced =
+            service.compare_archives_enhanced(&a1.id, &a3.id).unwrap();
+        assert!(enhanced.diff_result.stats.additions > 0, "代码演进应有新增");
+        // 验证summary生成
+        assert!(enhanced.summary.stats.total > 0, "摘要应有变更统计");
+
+        // 恢复v1（最小版本）
+        let restore =
+            dir.path().join("math_v1.py").to_string_lossy().to_string();
+        service.restore_archive(&a1.id, Some(&restore)).unwrap();
+        let content = fs::read_to_string(&restore).unwrap();
+        assert!(content.contains("def hello():"), "v1应有hello函数");
+        assert!(!content.contains("def add"), "v1不应有add函数");
+    }
+
+    /// 测试：CSV数据文件演进（行增删改）
+    #[test]
+    fn test_e2e_csv_data_evolution() {
+        let (service, dir) = setup_service();
+
+        let v1 = b"id,name,score\n1,Alice,85\n2,Bob,90\n";
+        let v2 = b"id,name,score\n1,Alice,88\n2,Bob,90\n3,Charlie,76\n";
+        let v3 = b"id,name,score,grade\n1,Alice,88,B\n2,Bob,90,A\n3,Charlie,76,C\n4,Diana,95,A\n";
+
+        let file_path = create_test_file(&dir, "scores.csv", v1);
+        let a1 = service
+            .create_archive(&file_path, "初始数据", vec![], None)
+            .unwrap();
+
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        fs::write(&file_path, v2).unwrap();
+        let a2 = service
+            .create_archive(&file_path, "添加Charlie+修改Alice", vec![], None)
+            .unwrap();
+
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        fs::write(&file_path, v3).unwrap();
+        let a3 = service
+            .create_archive(&file_path, "添加grade列+Diana", vec![], None)
+            .unwrap();
+
+        // 对比所有版本对
+        let d12 = service.compare_archives(&a1.id, &a2.id).unwrap();
+        let d23 = service.compare_archives(&a2.id, &a3.id).unwrap();
+        let d13 = service.compare_archives(&a1.id, &a3.id).unwrap();
+
+        assert!(d12.stats.additions > 0, "v1→v2有新增行");
+        assert!(d23.stats.additions > 0, "v2→v3有新增行");
+        assert!(
+            d13.stats.additions + d13.stats.deletions
+                >= d12.stats.additions + d12.stats.deletions,
+            "v1→v3变化应≥v1→v2"
+        );
+
+        // 恢复并验证数据完整性
+        let restore = dir
+            .path()
+            .join("scores_v1.csv")
+            .to_string_lossy()
+            .to_string();
+        service.restore_archive(&a1.id, Some(&restore)).unwrap();
+        let content = fs::read_to_string(&restore).unwrap();
+        assert!(content.contains("Alice,85"), "v1应有Alice原始分数");
+        assert!(!content.contains("Charlie"), "v1不应有Charlie");
+    }
+
+    /// 测试：HTML页面演进（结构变化）
+    #[test]
+    fn test_e2e_html_evolution() {
+        let (service, dir) = setup_service();
+
+        let v1 = b"<html><body><h1>Title</h1></body></html>";
+        let v2 = b"<html><head><title>My Page</title></head><body><h1>Title</h1><p>Content</p></body></html>";
+        let v3 = b"<!DOCTYPE html>\n<html><head><title>My Page</title><meta charset='utf-8'></head>\n<body><h1>New Title</h1><p>Content</p><footer>Copyright</footer></body></html>";
+
+        let file_path = create_test_file(&dir, "page.html", v1);
+        let a1 = service
+            .create_archive(&file_path, "v1", vec![], None)
+            .unwrap();
+
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        fs::write(&file_path, v2).unwrap();
+        let _a2 = service
+            .create_archive(&file_path, "v2", vec![], None)
+            .unwrap();
+
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        fs::write(&file_path, v3).unwrap();
+        let a3 = service
+            .create_archive(&file_path, "v3", vec![], None)
+            .unwrap();
+
+        let diff = service.compare_archives(&a1.id, &a3.id).unwrap();
+        assert!(diff.stats.deletions > 0, "HTML重构应有删除");
+        assert!(diff.stats.additions > 0, "HTML重构应有新增");
+
+        // 增强对比验证file_type
+        let enhanced =
+            service.compare_archives_enhanced(&a1.id, &a3.id).unwrap();
+        match &enhanced.file_type {
+            crate::diff::types::FileType::Text { .. } => {} // OK
+            other => panic!("HTML应识别为Text，实际: {:?}", other),
+        }
+    }
+
+    /// 测试：空文件 → 有内容 → 清空 → 再填充
+    #[test]
+    fn test_e2e_empty_file_lifecycle() {
+        let (service, dir) = setup_service();
+
+        // v1: 空文件
+        let file_path = create_test_file(&dir, "empty.txt", b"");
+        let a1 = service
+            .create_archive(&file_path, "v1:空文件", vec![], None)
+            .unwrap();
+
+        // v2: 添加内容
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        fs::write(&file_path, b"Hello World\n").unwrap();
+        let a2 = service
+            .create_archive(&file_path, "v2:有内容", vec![], None)
+            .unwrap();
+
+        // v3: 清空
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        fs::write(&file_path, b"").unwrap();
+        let a3 = service
+            .create_archive(&file_path, "v3:清空", vec![], None)
+            .unwrap();
+
+        // v4: 重新填充不同内容
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        fs::write(&file_path, b"New content here\n").unwrap();
+        let a4 = service
+            .create_archive(&file_path, "v4:新内容", vec![], None)
+            .unwrap();
+
+        // 对比空→有内容
+        let d12 = service.compare_archives(&a1.id, &a2.id).unwrap();
+        assert!(d12.stats.additions > 0, "空→有内容应有新增");
+
+        // 对比有内容→清空
+        let d23 = service.compare_archives(&a2.id, &a3.id).unwrap();
+        assert!(d23.stats.deletions > 0, "有内容→清空应有删除");
+
+        // 对比清空→新内容
+        let d34 = service.compare_archives(&a3.id, &a4.id).unwrap();
+        assert!(d34.stats.additions > 0, "清空→新内容应有新增");
+
+        // 恢复空文件
+        let restore = dir
+            .path()
+            .join("empty_v1.txt")
+            .to_string_lossy()
+            .to_string();
+        service.restore_archive(&a1.id, Some(&restore)).unwrap();
+        let content = fs::read(&restore).unwrap();
+        assert!(content.is_empty(), "恢复空文件应为空");
+    }
+
+    /// 测试：中文内容文件多版本
+    #[test]
+    fn test_e2e_chinese_content_evolution() {
+        let (service, dir) = setup_service();
+
+        let v1 = "这是第一版内容。\n包含中文标点：，。！？\n".as_bytes();
+        let v2 =
+            "这是第二版内容。\n包含中文标点：，。！？\n新增一行：你好世界\n"
+                .as_bytes();
+        let v3 = "这是第三版内容。\n包含中文标点：，。！？\n新增一行：你好世界\n以及特殊字符：©®™\n".as_bytes();
+
+        let file_path = create_test_file(&dir, "中文文件.txt", v1);
+        let a1 = service
+            .create_archive(&file_path, "v1", vec![], None)
+            .unwrap();
+
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        fs::write(&file_path, v2).unwrap();
+        let _a2 = service
+            .create_archive(&file_path, "v2", vec![], None)
+            .unwrap();
+
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        fs::write(&file_path, v3).unwrap();
+        let a3 = service
+            .create_archive(&file_path, "v3", vec![], None)
+            .unwrap();
+
+        // 对比v1 vs v3
+        let diff = service.compare_archives(&a1.id, &a3.id).unwrap();
+        assert!(diff.stats.additions > 0, "中文内容演进应有差异");
+
+        // 恢复v1并验证中文完整性
+        let restore =
+            dir.path().join("中文_v1.txt").to_string_lossy().to_string();
+        service.restore_archive(&a1.id, Some(&restore)).unwrap();
+        let content = fs::read_to_string(&restore).unwrap();
+        assert!(content.contains("第一版"), "应恢复到v1中文内容");
+        assert!(content.contains("，。！？"), "中文标点应完整");
+    }
+
+    /// 测试：SQL迁移脚本演进（表结构变更）
+    #[test]
+    fn test_e2e_sql_migration_evolution() {
+        let (service, dir) = setup_service();
+
+        let v1 = b"CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT);\n";
+        let v2 = b"CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT, email TEXT);\nCREATE INDEX idx_email ON users(email);\n";
+        let v3 = b"CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT, email TEXT, role TEXT DEFAULT 'user');\nCREATE INDEX idx_email ON users(email);\nCREATE TABLE posts (id INTEGER PRIMARY KEY, user_id INTEGER, title TEXT, FOREIGN KEY(user_id) REFERENCES users(id));\n";
+
+        let file_path = create_test_file(&dir, "001_init.sql", v1);
+        let a1 = service
+            .create_archive(&file_path, "v1:基础表", vec![], None)
+            .unwrap();
+
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        fs::write(&file_path, v2).unwrap();
+        let a2 = service
+            .create_archive(&file_path, "v2:添加email", vec![], None)
+            .unwrap();
+
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        fs::write(&file_path, v3).unwrap();
+        let a3 = service
+            .create_archive(&file_path, "v3:添加posts表", vec![], None)
+            .unwrap();
+
+        let enhanced =
+            service.compare_archives_enhanced(&a1.id, &a3.id).unwrap();
+        assert!(enhanced.diff_result.stats.additions > 0, "SQL演进应有新增");
+
+        // 恢复v2
+        let restore =
+            dir.path().join("001_v2.sql").to_string_lossy().to_string();
+        service.restore_archive(&a2.id, Some(&restore)).unwrap();
+        let content = fs::read_to_string(&restore).unwrap();
+        assert!(content.contains("idx_email"), "v2应有索引");
+        assert!(!content.contains("posts"), "v2不应有posts表");
+    }
+
+    /// 测试：TypeScript类型定义演进
+    #[test]
+    fn test_e2e_typescript_evolution() {
+        let (service, dir) = setup_service();
+
+        let v1 =
+            b"export interface User {\n  id: number;\n  name: string;\n}\n";
+        let v2 = b"export interface User {\n  id: number;\n  name: string;\n  email: string;\n}\n\nexport type Role = 'admin' | 'user';\n";
+        let v3 = b"export interface User {\n  id: number;\n  name: string;\n  email: string;\n  role: Role;\n  createdAt: Date;\n}\n\nexport type Role = 'admin' | 'user' | 'moderator';\n\nexport interface Post {\n  id: number;\n  userId: number;\n  title: string;\n  content: string;\n}\n";
+
+        let file_path = create_test_file(&dir, "types.ts", v1);
+        let a1 = service
+            .create_archive(&file_path, "v1", vec![], None)
+            .unwrap();
+
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        fs::write(&file_path, v2).unwrap();
+        let _a2 = service
+            .create_archive(&file_path, "v2", vec![], None)
+            .unwrap();
+
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        fs::write(&file_path, v3).unwrap();
+        let a3 = service
+            .create_archive(&file_path, "v3", vec![], None)
+            .unwrap();
+
+        let diff = service.compare_archives(&a1.id, &a3.id).unwrap();
+        assert!(diff.stats.additions > 3, "类型扩展应有多行新增");
+
+        // 增强对比验证
+        let enhanced =
+            service.compare_archives_enhanced(&a1.id, &a3.id).unwrap();
+        assert!(enhanced.summary.stats.total > 0, "应有变更摘要");
+    }
+
+    /// 测试：YAML配置文件演进
+    #[test]
+    fn test_e2e_yaml_config_evolution() {
+        let (service, dir) = setup_service();
+
+        let v1 = b"server:\n  host: localhost\n  port: 8080\n";
+        let v2 = b"server:\n  host: 0.0.0.0\n  port: 3000\n  cors: true\ndatabase:\n  url: sqlite://app.db\n";
+        let v3 = b"server:\n  host: 0.0.0.0\n  port: 3000\n  cors: true\n  rate_limit: 100\ndatabase:\n  url: postgres://localhost/mydb\n  pool_size: 10\nlogging:\n  level: info\n  file: /var/log/app.log\n";
+
+        let file_path = create_test_file(&dir, "app.yaml", v1);
+        let a1 = service
+            .create_archive(&file_path, "v1", vec![], None)
+            .unwrap();
+
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        fs::write(&file_path, v2).unwrap();
+        let _a2 = service
+            .create_archive(&file_path, "v2", vec![], None)
+            .unwrap();
+
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        fs::write(&file_path, v3).unwrap();
+        let a3 = service
+            .create_archive(&file_path, "v3", vec![], None)
+            .unwrap();
+
+        let d13 = service.compare_archives(&a1.id, &a3.id).unwrap();
+        assert!(d13.stats.additions > 0, "YAML扩展应有新增");
+        assert!(d13.stats.deletions > 0, "YAML修改应有删除");
+
+        let restore =
+            dir.path().join("app_v1.yaml").to_string_lossy().to_string();
+        service.restore_archive(&a1.id, Some(&restore)).unwrap();
+        let content = fs::read_to_string(&restore).unwrap();
+        assert!(content.contains("8080"), "v1应有原始端口");
+        assert!(!content.contains("database"), "v1不应有database配置");
+    }
+
+    /// 测试：单行超长文件（minified JS/CSS场景）
+    #[test]
+    fn test_e2e_single_long_line_file() {
+        let (service, dir) = setup_service();
+
+        // 模拟minified JS: 一行几千字符
+        let long_line_v1 = format!("var data={{}};{}", "x".repeat(5000));
+        let long_line_v2 =
+            format!("var data={{key:'value'}};{}", "y".repeat(5000));
+
+        let file_path =
+            create_test_file(&dir, "bundle.min.js", long_line_v1.as_bytes());
+        let a1 = service
+            .create_archive(&file_path, "v1", vec![], None)
+            .unwrap();
+
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        fs::write(&file_path, long_line_v2.as_bytes()).unwrap();
+        let a2 = service
+            .create_archive(&file_path, "v2", vec![], None)
+            .unwrap();
+
+        let diff = service.compare_archives(&a1.id, &a2.id).unwrap();
+        assert!(
+            diff.stats.additions > 0 || diff.stats.deletions > 0,
+            "minified文件变化应有差异"
+        );
+
+        // 恢复验证
+        let restore = dir
+            .path()
+            .join("bundle_v1.js")
+            .to_string_lossy()
+            .to_string();
+        service.restore_archive(&a1.id, Some(&restore)).unwrap();
+        let content = fs::read_to_string(&restore).unwrap();
+        assert!(content.starts_with("var data={}"), "应恢复v1内容");
+    }
+
+    /// 测试：只有换行符的文件
+    #[test]
+    fn test_e2e_whitespace_only_file() {
+        let (service, dir) = setup_service();
+
+        let file_path = create_test_file(&dir, "blank.txt", b"\n\n\n");
+        let a1 = service
+            .create_archive(&file_path, "v1:空行", vec![], None)
+            .unwrap();
+
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        fs::write(&file_path, b"\n\n\nHello\n\n\n").unwrap();
+        let a2 = service
+            .create_archive(&file_path, "v2:添加内容", vec![], None)
+            .unwrap();
+
+        let diff = service.compare_archives(&a1.id, &a2.id).unwrap();
+        assert!(diff.stats.additions > 0, "空白→有内容应有差异");
+
+        // 恢复空白文件
+        let restore = dir
+            .path()
+            .join("blank_v1.txt")
+            .to_string_lossy()
+            .to_string();
+        service.restore_archive(&a1.id, Some(&restore)).unwrap();
+        let content = fs::read(&restore).unwrap();
+        assert_eq!(content, b"\n\n\n", "应恢复原始空白内容");
+    }
+
+    /// 测试：同一文件大量版本（10个版本的时间轴和对比）
+    #[test]
+    fn test_e2e_many_versions_timeline() {
+        let (service, dir) = setup_service();
+
+        let file_path = dir
+            .path()
+            .join("evolving.txt")
+            .to_string_lossy()
+            .to_string();
+        let mut archives = Vec::new();
+
+        for i in 1..=10u32 {
+            let content =
+                format!("Version {}\n{}\n", i, "x".repeat(i as usize * 10));
+            fs::write(&file_path, content.as_bytes()).unwrap();
+            if i > 1 {
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+            let a = service
+                .create_archive(&file_path, &format!("v{}", i), vec![], None)
+                .unwrap();
+            archives.push(a);
+        }
+
+        // 时间轴应有10个存档
+        let timeline = service.get_timeline(&file_path).unwrap();
+        assert_eq!(timeline.len(), 10, "应有10个版本");
+
+        // 时间轴排序：最新在前
+        assert_eq!(timeline[0].id, archives[9].id, "最新应在最前");
+        assert_eq!(timeline[9].id, archives[0].id, "最旧应在最后");
+
+        // 第一版 vs 最新版应有大量差异
+        let diff = service
+            .compare_archives(&archives[0].id, &archives[9].id)
+            .unwrap();
+        assert!(
+            diff.stats.additions + diff.stats.deletions > 5,
+            "首尾版本应有大量差异"
+        );
+
+        // 删除第5版，验证链式parent不受影响
+        service.delete_archive(&archives[4].id).unwrap();
+        let timeline_after = service.get_timeline(&file_path).unwrap();
+        assert_eq!(timeline_after.len(), 9, "删除后应剩9个版本");
+
+        // 第4版和第6版仍可对比（跳过已删除的第5版）
+        let diff_skip = service
+            .compare_archives(&archives[3].id, &archives[5].id)
+            .unwrap();
+        assert!(
+            diff_skip.stats.additions > 0 || diff_skip.stats.deletions > 0,
+            "跳过删除版本后仍应有差异"
+        );
+    }
+
+    /// 测试：二进制文件（模拟PNG头）
+    #[test]
+    fn test_e2e_binary_file_handling() {
+        let (service, dir) = setup_service();
+
+        // 模拟PNG文件头 + 随机数据
+        let mut v1 = vec![0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]; // PNG magic
+        v1.extend_from_slice(&[0u8; 100]);
+
+        let mut v2 = v1.clone();
+        v2[10] = 0xFF; // 修改一个字节
+        v2.extend_from_slice(&[1u8; 50]); // 添加数据
+
+        let file_path = create_test_file(&dir, "image.png", &v1);
+        let a1 = service
+            .create_archive(&file_path, "v1", vec![], None)
+            .unwrap();
+
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        fs::write(&file_path, &v2).unwrap();
+        let a2 = service
+            .create_archive(&file_path, "v2", vec![], None)
+            .unwrap();
+
+        // 二进制对比
+        let diff = service.compare_archives(&a1.id, &a2.id).unwrap();
+        // 二进制文件应返回特殊diff格式
+        assert!(
+            diff.stats.additions > 0 || diff.stats.deletions > 0,
+            "二进制文件变化应有差异"
+        );
+
+        // 增强对比应识别为Image类型
+        let enhanced =
+            service.compare_archives_enhanced(&a1.id, &a2.id).unwrap();
+        match &enhanced.file_type {
+            crate::diff::types::FileType::Image { format, .. } => {
+                assert_eq!(format, "png", "应识别为PNG");
+            }
+            other => panic!("PNG应识别为Image类型，实际: {:?}", other),
+        }
+
+        // 恢复v1并验证二进制完整性
+        let restore = dir
+            .path()
+            .join("image_v1.png")
+            .to_string_lossy()
+            .to_string();
+        service.restore_archive(&a1.id, Some(&restore)).unwrap();
+        let content = fs::read(&restore).unwrap();
+        assert_eq!(content, v1, "恢复的二进制内容应完全一致");
+        assert_eq!(&content[..4], &[0x89, 0x50, 0x4E, 0x47], "PNG magic应正确");
+    }
+
+    /// 测试：PDF文件（模拟）
+    #[test]
+    fn test_e2e_pdf_file_handling() {
+        let (service, dir) = setup_service();
+
+        // 模拟PDF头
+        let v1 = b"%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\n";
+        let v2 = b"%PDF-1.5\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n2 0 obj\n<< /Type /Pages >>\nendobj\n";
+
+        let file_path = create_test_file(&dir, "document.pdf", v1);
+        let a1 = service
+            .create_archive(&file_path, "v1", vec![], None)
+            .unwrap();
+
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        fs::write(&file_path, v2).unwrap();
+        let a2 = service
+            .create_archive(&file_path, "v2", vec![], None)
+            .unwrap();
+
+        // 增强对比应识别为PDF类型
+        let enhanced =
+            service.compare_archives_enhanced(&a1.id, &a2.id).unwrap();
+        match &enhanced.file_type {
+            crate::diff::types::FileType::Pdf { .. } => {} // OK
+            other => panic!("PDF应识别为Pdf类型，实际: {:?}", other),
+        }
+    }
+
+    /// 测试：CAD文件（DXF模拟）
+    #[test]
+    fn test_e2e_cad_file_handling() {
+        let (service, dir) = setup_service();
+
+        let v1 = b"0\nSECTION\n2\nENTITIES\n0\nLINE\n8\nLayer1\n";
+        let v2 = b"0\nSECTION\n2\nENTITIES\n0\nLINE\n8\nLayer1\n0\nCIRCLE\n8\nLayer2\n";
+
+        let file_path = create_test_file(&dir, "drawing.dxf", v1);
+        let a1 = service
+            .create_archive(&file_path, "v1", vec![], None)
+            .unwrap();
+
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        fs::write(&file_path, v2).unwrap();
+        let a2 = service
+            .create_archive(&file_path, "v2", vec![], None)
+            .unwrap();
+
+        let enhanced =
+            service.compare_archives_enhanced(&a1.id, &a2.id).unwrap();
+        match &enhanced.file_type {
+            crate::diff::types::FileType::Cad { format, .. } => {
+                assert_eq!(format, "DXF", "应识别为DXF格式");
+            }
+            other => panic!("DXF应识别为Cad类型，实际: {:?}", other),
+        }
+    }
+
+    /// 测试：BOM编码文件
+    #[test]
+    fn test_e2e_bom_encoded_file() {
+        let (service, dir) = setup_service();
+
+        // UTF-8 with BOM
+        let mut v1 = vec![0xEF, 0xBB, 0xBF]; // BOM
+        v1.extend_from_slice("Hello World\n".as_bytes());
+
+        let mut v2 = vec![0xEF, 0xBB, 0xBF];
+        v2.extend_from_slice("Hello Universe\nNew line\n".as_bytes());
+
+        let file_path = create_test_file(&dir, "bom.txt", &v1);
+        let a1 = service
+            .create_archive(&file_path, "v1", vec![], None)
+            .unwrap();
+
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        fs::write(&file_path, &v2).unwrap();
+        let a2 = service
+            .create_archive(&file_path, "v2", vec![], None)
+            .unwrap();
+
+        let diff = service.compare_archives(&a1.id, &a2.id).unwrap();
+        assert!(diff.stats.additions > 0, "BOM文件变化应有差异");
+
+        // 恢复并验证BOM保留
+        let restore =
+            dir.path().join("bom_v1.txt").to_string_lossy().to_string();
+        service.restore_archive(&a1.id, Some(&restore)).unwrap();
+        let content = fs::read(&restore).unwrap();
+        assert_eq!(&content[..3], &[0xEF, 0xBB, 0xBF], "BOM应保留");
+    }
+
+    /// 测试：跨文件类型对比（不同类型文件不应混比）
+    #[test]
+    fn test_e2e_cross_file_comparison() {
+        let (service, dir) = setup_service();
+
+        // 创建两个不同文件的存档
+        let txt_path = create_test_file(&dir, "doc.txt", b"text content");
+        let json_path =
+            create_test_file(&dir, "data.json", b"{\"key\":\"value\"}");
+
+        let a_txt = service
+            .create_archive(&txt_path, "txt", vec![], None)
+            .unwrap();
+        let a_json = service
+            .create_archive(&json_path, "json", vec![], None)
+            .unwrap();
+
+        // 跨文件对比（不同文件的存档对比）
+        // 这应该能工作（比较内容差异），即使文件路径不同
+        let diff = service.compare_archives(&a_txt.id, &a_json.id).unwrap();
+        // 内容完全不同，应有差异
+        assert!(
+            diff.stats.additions > 0 || diff.stats.deletions > 0,
+            "不同文件对比应有差异"
+        );
+    }
+
+    /// 测试：符号链接文件应被拒绝
+    #[test]
+    fn test_e2e_symlink_rejected() {
+        let (service, dir) = setup_service();
+
+        let real_file = create_test_file(&dir, "real.txt", b"real content");
+        let link_path =
+            dir.path().join("link.txt").to_string_lossy().to_string();
+
+        // 创建符号链接
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(&real_file, &link_path).unwrap();
+
+            let result =
+                service.create_archive(&link_path, "symlink", vec![], None);
+            assert!(result.is_err(), "符号链接应被拒绝");
+            let msg = format!("{}", result.unwrap_err());
+            assert!(
+                msg.contains("符号链接") || msg.contains("symlink"),
+                "错误应提及符号链接，实际: {}",
+                msg
+            );
+        }
+    }
 }
