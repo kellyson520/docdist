@@ -433,7 +433,7 @@ pub async fn restore_directory(
 
     std::fs::create_dir_all(&output_dir)?;
 
-    for (_path, archive) in &latest_per_file {
+    for archive in latest_per_file.values() {
         let output_path =
             std::path::PathBuf::from(&output_dir).join(&archive.file_name);
         match state.service.restore_archive(
@@ -507,7 +507,6 @@ pub async fn export_history(
 
     // 写入各存档的 chunk 文件
     let chunks_dir = state.service.chunks_dir();
-    let mut total_size = 0u64;
     for archive in &archives {
         let chunk_hashes =
             db::get_archive_chunk_hashes(state.service.db(), &archive.id)?;
@@ -521,7 +520,6 @@ pub async fn export_history(
         let filename = format!("{}.bin", archive.id);
         zip.start_file(&filename, options)?;
         zip.write_all(&data)?;
-        total_size += data.len() as u64;
     }
 
     zip.finish()?;
