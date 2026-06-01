@@ -711,22 +711,14 @@ pub fn get_starred_archives(
 ) -> Result<Vec<(Archive, String, String)>, crate::error::AppError> {
     // Returns (Archive, star_id, label)
     let conn = pool.get()?;
-    let mut stmt = conn.prepare(&format!(
-        "SELECT {}, s.id as star_id, s.label FROM archives a
+    let mut stmt = conn.prepare(
+        "SELECT a.id, a.file_path, a.file_name, a.file_size, a.checksum,
+         a.chunk_count, a.note, a.tags, a.parent_id, a.created_at,
+         s.id as star_id, s.label
+         FROM archives a
          INNER JOIN archive_stars s ON a.id = s.archive_id
          ORDER BY s.created_at DESC",
-        SELECT_FIELDS
-            .replace("id,", "a.id,")
-            .replace("file_path", "a.file_path")
-            .replace("file_name", "a.file_name")
-            .replace("file_size", "a.file_size")
-            .replace("checksum", "a.checksum")
-            .replace("chunk_count", "a.chunk_count")
-            .replace("note", "a.note")
-            .replace("tags", "a.tags")
-            .replace("parent_id", "a.parent_id")
-            .replace("created_at", "a.created_at")
-    ))?;
+    )?;
     let rows = stmt.query_map([], |row| {
         let archive = row_to_archive(row)?;
         let star_id: String = row.get(10)?;
