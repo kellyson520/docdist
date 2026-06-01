@@ -119,16 +119,53 @@ fn validate_file_path(path: &Path) -> Result<(), AppError> {
         .map_err(|_| AppError::Other("无法解析文件路径".to_string()))?;
 
     let path_str = canonical.to_string_lossy().to_string();
-    let forbidden = [
-        "/etc", "/sys", "/proc", "/dev", "/root", "/boot", "/var/log",
-    ];
-    for prefix in &forbidden {
-        if path_str == *prefix || path_str.starts_with(&format!("{}/", prefix))
-        {
-            return Err(AppError::Other(format!(
-                "不允许归档系统文件: {}",
-                prefix
-            )));
+    // 禁止归档的系统敏感目录
+    #[cfg(not(target_os = "windows"))]
+    {
+        let forbidden = [
+            "/etc", "/sys", "/proc", "/dev", "/root", "/boot", "/var/log",
+        ];
+        for prefix in &forbidden {
+            if path_str == *prefix
+                || path_str.starts_with(&format!("{}/", prefix))
+            {
+                return Err(AppError::Other(format!(
+                    "不允许归档系统文件: {}",
+                    prefix
+                )));
+            }
+        }
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let path_lower = path_str.to_lowercase();
+        let forbidden_windows = [
+            "c:\\windows",
+            "c:\\program files",
+            "c:\\program files (x86)",
+            "c:\\programdata",
+        ];
+        for prefix in &forbidden_windows {
+            if path_lower.starts_with(prefix) {
+                return Err(AppError::Other(format!(
+                    "不允许归档系统文件: {}",
+                    prefix
+                )));
+            }
+        }
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let forbidden_macos = ["/System", "/Library/System", "/private/var"];
+        for prefix in &forbidden_macos {
+            if path_str == *prefix
+                || path_str.starts_with(&format!("{}/", prefix))
+            {
+                return Err(AppError::Other(format!(
+                    "不允许归档系统文件: {}",
+                    prefix
+                )));
+            }
         }
     }
 
@@ -410,8 +447,8 @@ impl ArchiveService {
             .query_map(rusqlite::params![archive_id], |row| {
                 row.get::<_, String>(0)
             })?
-            .filter_map(|r| r.ok())
-            .collect();
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(crate::error::AppError::Db)?;
         drop(stmt);
 
         tx.execute(

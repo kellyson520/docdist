@@ -212,7 +212,8 @@ pub fn get_archive(
     let mut rows = stmt.query_map(params![id], row_to_archive)?;
     match rows.next() {
         Some(Ok(archive)) => Ok(Some(archive)),
-        _ => Ok(None),
+        Some(Err(e)) => Err(crate::error::AppError::Db(e)),
+        None => Ok(None),
     }
 }
 
@@ -351,6 +352,7 @@ pub fn get_archives_paginated(
     if page < 1 || page_size < 1 {
         return Ok((Vec::new(), 0));
     }
+    let page_size = page_size.min(500);
     let conn = pool.get()?;
     let mut sql = format!("SELECT {} FROM archives WHERE 1=1", SELECT_FIELDS);
     let mut count_sql = "SELECT COUNT(*) FROM archives WHERE 1=1".to_string();

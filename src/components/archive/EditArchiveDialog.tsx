@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { TagBadge } from '../common/TagBadge';
 import { X, Plus } from 'lucide-react';
 
@@ -14,14 +14,42 @@ export function EditArchiveDialog({ initialNote, initialTags, onConfirm, onCance
   const [tags, setTags] = useState<string[]>(initialTags);
   const [tagInput, setTagInput] = useState('');
 
-  // Escape 键关闭
+  const dialogRef = useRef<HTMLDivElement>(null);
+
+  const onCancelRef = useRef(onCancel);
+  onCancelRef.current = onCancel;
+
+  const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    if (e.key === 'Escape') {
+      onCancelRef.current();
+    }
+    if (e.key === 'Tab' && dialogRef.current) {
+      const focusable = Array.from(
+        dialogRef.current.querySelectorAll<HTMLElement>(
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+        ),
+      );
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey) {
+        if (document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        }
+      } else {
+        if (document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    }
+  }, []);
+
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onCancel();
-    };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onCancel]);
+  }, [handleKeyDown]);
 
   const addTag = () => {
     const tag = tagInput.trim();
@@ -32,8 +60,8 @@ export function EditArchiveDialog({ initialNote, initialTags, onConfirm, onCance
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={onCancel}>
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6 w-[480px] animate-fade-in" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={onCancel} role="dialog" aria-modal="true">
+      <div ref={dialogRef} className="bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6 w-[480px] animate-fade-in" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100">编辑存档</h3>
           <button onClick={onCancel} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded">

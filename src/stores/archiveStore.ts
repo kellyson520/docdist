@@ -243,7 +243,10 @@ export const useArchiveStore = create<ArchiveState>((set, get) => ({
       set({ loading: false });
       await get().fetchStatistics();
     } catch (e: unknown) {
-      set({ error: e instanceof Error ? e.message : String(e), loading: false });
+      const msg = e instanceof Error ? e.message : String(e);
+      log.error('恢复存档失败', msg);
+      toast.error('恢复失败', msg);
+      set({ error: msg, loading: false });
     }
   },
 
@@ -272,6 +275,8 @@ export const useArchiveStore = create<ArchiveState>((set, get) => ({
     set({ loading: true, error: null });
     try {
       const count = await invoke<number>('delete_archives_batch', { ids });
+      log.info('批量删除完成', { count });
+      toast.success('批量删除完成', `已删除 ${count} 个存档`);
       const { fetchArchives, searchQuery, selectedArchive, compareTarget } = get();
       const idsSet = new Set(ids);
       set({
@@ -283,7 +288,10 @@ export const useArchiveStore = create<ArchiveState>((set, get) => ({
       await get().fetchStatistics();
       return count;
     } catch (e: unknown) {
-      set({ error: e instanceof Error ? e.message : String(e), loading: false });
+      const msg = e instanceof Error ? e.message : String(e);
+      log.error('批量删除失败', msg);
+      toast.error('批量删除失败', msg);
+      set({ error: msg, loading: false });
       return 0;
     }
   },
@@ -292,10 +300,15 @@ export const useArchiveStore = create<ArchiveState>((set, get) => ({
     set({ loading: true, error: null });
     try {
       await invoke('update_archive', { id, note, tags });
+      log.info('存档更新成功', { id });
+      toast.success('更新成功', '存档信息已更新');
       const { fetchArchives, searchQuery } = get();
       await fetchArchives(undefined, searchQuery || undefined);
     } catch (e: unknown) {
-      set({ error: e instanceof Error ? e.message : String(e), loading: false });
+      const msg = e instanceof Error ? e.message : String(e);
+      log.error('更新存档失败', msg);
+      toast.error('更新失败', msg);
+      set({ error: msg, loading: false });
     }
   },
 

@@ -77,10 +77,10 @@ export function DiffDetailView({ result }: DiffDetailViewProps) {
                   }`}
                 >
                   <span className="w-8 text-right pr-2 text-gray-400 dark:text-gray-600 select-none">
-                    {change.old_line || ''}
+                    {change.old_line ?? ''}
                   </span>
                   <span className="w-8 text-right pr-2 text-gray-400 dark:text-gray-600 select-none">
-                    {change.new_line || ''}
+                    {change.new_line ?? ''}
                   </span>
                   <span className="w-5 text-center font-bold">
                     {change.change_type === 'add' ? '+' : change.change_type === 'delete' ? '-' : ' '}

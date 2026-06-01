@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useArchiveStore } from '../../stores/archiveStore';
+import { toast } from '../../stores/toastStore';
 import {
   Eye,
   EyeOff,
@@ -46,7 +47,11 @@ export function WatcherPanel() {
       await stopWatcher();
     } else {
       const paths = watcherStatus.paths ?? [];
-      await startWatcher(paths.length > 0 ? paths : []);
+      if (paths.length === 0) {
+        toast.warning('无法启动监控', '请先添加至少一个监控目录');
+        return;
+      }
+      await startWatcher(paths);
     }
   };
 

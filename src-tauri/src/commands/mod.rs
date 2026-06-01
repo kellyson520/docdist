@@ -148,12 +148,13 @@ pub async fn start_watcher(
 ) -> Result<(), AppError> {
     let mut watcher = state.watcher.lock().unwrap_or_else(|e| e.into_inner());
 
-    // 从配置读取防抖延迟
-    let config = state.config.lock().unwrap_or_else(|e| e.into_inner());
-    watcher.set_debounce_duration(std::time::Duration::from_secs(
-        config.watcher.auto_archive_delay,
-    ));
-    drop(config);
+    // 从配置读取防抖延迟（先提取值，再锁 watcher，避免 ABBA 死锁）
+    let debounce_secs = {
+        let config = state.config.lock().unwrap_or_else(|e| e.into_inner());
+        config.watcher.auto_archive_delay
+    };
+    watcher
+        .set_debounce_duration(std::time::Duration::from_secs(debounce_secs));
 
     // 设置自动存档回调：通过 Tauri 事件通知前端
     let handle = app_handle.clone();
@@ -240,7 +241,7 @@ pub async fn verify_chunks(
 pub async fn read_log_file(
     state: State<'_, AppState>,
     lines: Option<usize>,
-) -> Result<Vec<String>, String> {
+) -> Result<Vec<String>, AppError> {
     let max_lines = lines.unwrap_or(100);
     let log_path = state.data_dir.join("logs").join("docdist.log");
 
@@ -257,12 +258,12 @@ pub async fn read_log_file(
 
     use std::io::{BufRead, Seek, SeekFrom};
     let file = std::fs::File::open(&log_path)
-        .map_err(|e| format!("读取日志文件失败: {}", e))?;
+        .map_err(|e| AppError::Other(format!("读取日志文件失败: {}", e)))?;
     let mut reader = std::io::BufReader::new(file);
     if skip > 0 {
         reader
             .seek(SeekFrom::Start(skip as u64))
-            .map_err(|e| format!("读取日志文件失败: {}", e))?;
+            .map_err(|e| AppError::Other(format!("读取日志文件失败: {}", e)))?;
         // 跳过被截断的第一行
         let mut discard = String::new();
         let _ = reader.read_line(&mut discard);

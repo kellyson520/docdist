@@ -51,16 +51,6 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
     setVerifying(false);
   };
 
-  if (!localConfig) {
-    return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" role="dialog" aria-modal="true" aria-label="加载配置中">
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6">
-          <p className="text-sm text-gray-500 dark:text-gray-400">加载配置中...</p>
-        </div>
-      </div>
-    );
-  }
-
   const panelRef = useRef<HTMLDivElement>(null);
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
@@ -94,6 +84,16 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [handleKeyDown]);
+
+  if (!localConfig) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" role="dialog" aria-modal="true" aria-label="加载配置中">
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6">
+          <p className="text-sm text-gray-500 dark:text-gray-400">加载配置中...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" role="dialog" aria-modal="true" aria-labelledby="settings-title">
