@@ -963,8 +963,9 @@ mod tests {
     #[test]
     fn test_update_archive_nonexistent() {
         let pool = setup_db();
-        // 更新不存在的记录不会报错，只是 0 行受影响
-        update_archive(&pool, "ghost", "note", &[]).unwrap();
+        // 更新不存在的记录应返回错误
+        let result = update_archive(&pool, "ghost", "note", &[]);
+        assert!(result.is_err(), "should error for non-existent archive");
     }
 
     // ============================================================
