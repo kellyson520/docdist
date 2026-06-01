@@ -182,7 +182,7 @@ export function DiffViewer() {
       )}
 
       {/* Diff Content */}
-      <div ref={parentRef} className="flex-1 overflow-y-auto font-mono text-xs">
+      <div className="flex-1 overflow-y-auto font-mono text-xs">
         {diffResult.hunks.map((hunk, hunkIdx) => {
           const isExpanded = !collapsedHunks.has(hunkIdx);
           
@@ -215,7 +215,7 @@ export function DiffViewer() {
 }
 
 // 虚拟化渲染 changes 列表的子组件
-function VirtualizedChangesList({ changes }: { changes: Array<{ change_type: string; content: string; old_line?: number; new_line?: number }> }) {
+function VirtualizedChangesList({ changes }: { changes: Array<{ change_type: string; content: string; old_line?: number | null; new_line?: number | null }> }) {
   const parentRef = useRef<HTMLDivElement>(null);
 
   const virtualizer = useVirtualizer({

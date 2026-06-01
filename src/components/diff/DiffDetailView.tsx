@@ -12,7 +12,7 @@ const normalizeLineEndings = (text: string) =>
   text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
 
 // 虚拟化渲染 changes 列表的子组件
-function VirtualizedChangesList({ changes }: { changes: Array<{ change_type: string; content: string; old_line?: number; new_line?: number }> }) {
+function VirtualizedChangesList({ changes }: { changes: Array<{ change_type: string; content: string; old_line?: number | null; new_line?: number | null }> }) {
   const parentRef = useRef<HTMLDivElement>(null);
 
   const virtualizer = useVirtualizer({
