@@ -2587,8 +2587,13 @@ mod tests {
         let mut archives = Vec::new();
 
         for i in 1..=10u32 {
-            let content =
-                format!("Version {}\n{}\n", i, "x".repeat(i as usize * 10));
+            let content = format!(
+                "# Version {}\n\nSection A: {}\nSection B: {}\nEnd of version {}.\n",
+                i,
+                "alpha".repeat(i as usize),
+                "beta".repeat(10 - i as usize),
+                i
+            );
             fs::write(&file_path, content.as_bytes()).unwrap();
             if i > 1 {
                 std::thread::sleep(std::time::Duration::from_millis(100));
