@@ -32,7 +32,7 @@ function ToastItem({ toast }: { toast: Toast }) {
       <div className="flex-1 min-w-0">
         <p className={`text-sm font-medium ${colors.text}`}>{toast.title}</p>
         {toast.message && (
-          <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{toast.message}</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 line-clamp-2">{toast.message}</p>
         )}
       </div>
       {toast.dismissible && (
@@ -40,7 +40,7 @@ function ToastItem({ toast }: { toast: Toast }) {
           onClick={() => removeToast(toast.id)}
           className="p-0.5 hover:bg-black/5 rounded transition flex-shrink-0"
         >
-          <X className="w-3.5 h-3.5 text-gray-400" />
+          <X className="w-3.5 h-3.5 text-gray-400 dark:text-gray-500" />
         </button>
       )}
     </div>

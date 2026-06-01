@@ -217,8 +217,17 @@ pub async fn set_watcher_exclude_patterns(
     state: State<'_, AppState>,
     patterns: Vec<String>,
 ) -> Result<(), AppError> {
-    let watcher = state.watcher.lock().unwrap_or_else(|e| e.into_inner());
-    watcher.set_exclude_patterns(patterns);
+    // 先更新 watcher（锁 watcher）
+    {
+        let watcher = state.watcher.lock().unwrap_or_else(|e| e.into_inner());
+        watcher.set_exclude_patterns(patterns.clone());
+    }
+    // 再持久化到配置（锁 config，避免 ABBA 死锁）
+    {
+        let mut config = state.config.lock().unwrap_or_else(|e| e.into_inner());
+        config.watcher.exclude_patterns = patterns;
+        config.save(&state.data_dir)?;
+    }
     Ok(())
 }
 

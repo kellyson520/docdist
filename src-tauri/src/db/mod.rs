@@ -200,6 +200,55 @@ pub fn get_archives(
     Ok(archives)
 }
 
+/// 获取所有存档（无 LIMIT，用于树视图等需要完整数据的场景）
+pub fn get_all_archives(
+    pool: &DbPool,
+    file_path: Option<&str>,
+    search: Option<&str>,
+) -> Result<Vec<Archive>, crate::error::AppError> {
+    let conn = pool.get()?;
+    let mut sql = format!("SELECT {} FROM archives WHERE 1=1", SELECT_FIELDS);
+    let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+
+    if let Some(path) = file_path {
+        if !path.is_empty() {
+            sql.push_str(" AND file_path = ?");
+            param_values.push(Box::new(path.to_string()));
+        }
+    }
+    if let Some(s) = search {
+        if !s.is_empty() {
+            sql.push_str(
+                " AND (file_name LIKE ? ESCAPE '\\' OR note LIKE ? ESCAPE '\\' OR tags LIKE ? ESCAPE '\\')",
+            );
+            let escaped = s
+                .replace('\\', "\\\\")
+                .replace('%', "\\%")
+                .replace('_', "\\_");
+            let pattern = format!("%{}%", escaped);
+            param_values.push(Box::new(pattern.clone()));
+            param_values.push(Box::new(pattern.clone()));
+            param_values.push(Box::new(pattern));
+        }
+    }
+    sql.push_str(" ORDER BY created_at DESC");
+
+    let mut stmt = conn.prepare(&sql)?;
+    let params_refs: Vec<&dyn rusqlite::types::ToSql> =
+        param_values.iter().map(|p| p.as_ref()).collect();
+    let rows = stmt.query_map(params_refs.as_slice(), row_to_archive)?;
+
+    let archives: Vec<Archive> = rows
+        .map(|r| {
+            r.map_err(|e| {
+                tracing::warn!("Failed to read archive row: {}", e);
+                crate::error::AppError::Db(e)
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(archives)
+}
+
 pub fn get_archive(
     pool: &DbPool,
     id: &str,
@@ -239,10 +288,13 @@ pub fn update_archive(
 ) -> Result<(), crate::error::AppError> {
     let conn = pool.get()?;
     let tags_json = serde_json::to_string(tags)?;
-    conn.execute(
+    let rows = conn.execute(
         "UPDATE archives SET note = ?1, tags = ?2 WHERE id = ?3",
         params![note, tags_json, id],
     )?;
+    if rows == 0 {
+        return Err(crate::error::AppError::Other("存档不存在".to_string()));
+    }
     Ok(())
 }
 

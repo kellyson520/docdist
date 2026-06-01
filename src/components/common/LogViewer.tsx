@@ -125,7 +125,7 @@ function FrontendLogPanel() {
     <>
       {/* Filters */}
       <div className="px-4 py-2 border-b border-gray-50 dark:border-gray-700 flex items-center gap-2">
-        <Filter className="w-3.5 h-3.5 text-gray-400" />
+        <Filter className="w-3.5 h-3.5 text-gray-400 dark:text-gray-500" />
         {(['all', 'debug', 'info', 'warn', 'error'] as const).map(level => (
           <button
             key={level}
@@ -145,16 +145,16 @@ function FrontendLogPanel() {
           className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition"
           title="导出日志"
         >
-          <Download className="w-4 h-4 text-gray-400" />
+          <Download className="w-4 h-4 text-gray-400 dark:text-gray-500" />
         </button>
         <button
           onClick={() => { Logger.clear(); setLogs([]); }}
           className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition"
           title="清空日志"
         >
-          <Trash2 className="w-4 h-4 text-gray-400" />
+          <Trash2 className="w-4 h-4 text-gray-400 dark:text-gray-500" />
         </button>
-        <label className="flex items-center gap-1 text-xs text-gray-400 cursor-pointer ml-2">
+        <label className="flex items-center gap-1 text-xs text-gray-400 dark:text-gray-500 cursor-pointer ml-2">
           <input
             type="checkbox"
             checked={autoScroll}

@@ -39,15 +39,15 @@ export function RegionsView({ regions }: RegionsViewProps) {
                 {region.region_type}
               </span>
             </div>
-            <span className="text-sm text-gray-500">
+            <span className="text-sm text-gray-500 dark:text-gray-400">
               第 {region.start_line} - {region.end_line} 行
             </span>
           </div>
           <div className="mt-2 flex items-center gap-4 text-sm">
-            <span className="text-gray-500">
+            <span className="text-gray-500 dark:text-gray-400">
               变更 {region.change_lines} 行
             </span>
-            <span className={`px-2 py-0.5 rounded text-xs ${colorMap[region.change_type] || 'bg-gray-100'}`}>
+            <span className={`px-2 py-0.5 rounded text-xs ${colorMap[region.change_type] || 'bg-gray-100 dark:bg-gray-700'}`}>
               {labelMap[region.change_type] || region.change_type}
             </span>
           </div>

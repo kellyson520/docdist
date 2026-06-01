@@ -665,6 +665,7 @@ dependencies = [
  "blake3",
  "chrono",
  "dirs-next",
+ "encoding_rs",
  "mime_guess",
  "notify",
  "r2d2",

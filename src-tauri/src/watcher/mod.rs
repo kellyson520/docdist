@@ -31,8 +31,8 @@ pub struct FileWatcher {
     auto_archive_cb: Arc<Mutex<Option<AutoArchiveCallback>>>,
     /// Tauri 事件发送器（用于通知前端）
     event_sender: Arc<Mutex<Option<tauri::AppHandle>>>,
-    /// 已触发过的路径（用于去重，存档完成后重置）
-    triggered_paths: Arc<Mutex<HashMap<String, bool>>>,
+    /// 已触发过的路径（用于去重，带 TTL 自动过期）
+    triggered_paths: Arc<Mutex<HashMap<String, Instant>>>,
     /// 防抖线程停止信号
     debounce_stop: Arc<AtomicBool>,
     /// 防抖线程句柄
@@ -61,7 +61,7 @@ impl FileWatcher {
             pending_changes: Arc::new(Mutex::new(HashMap::new())),
             auto_archive_cb: Arc::new(Mutex::new(None)),
             event_sender: Arc::new(Mutex::new(None)),
-            triggered_paths: Arc::new(Mutex::new(HashMap::new())),
+            triggered_paths: Arc::new(Mutex::new(HashMap::new())), // Instant-valued
             debounce_stop: Arc::new(AtomicBool::new(false)),
             debounce_handle: None,
             min_file_size: Arc::new(AtomicU64::new(0)),
@@ -119,16 +119,22 @@ impl FileWatcher {
     /// 触发自动存档
     #[allow(dead_code)]
     fn trigger_auto_archive(&self, path: String) {
-        // 去重：同一文件在防抖窗口内只触发一次
+        // 去重：同一文件在防抖窗口内只触发一次（带 TTL 过期）
         {
             let mut triggered = self
                 .triggered_paths
                 .lock()
                 .unwrap_or_else(|e| e.into_inner());
+            let now = Instant::now();
+            // 清理超过 2×debounce_duration 的过期条目
+            let ttl = Duration::from_millis(
+                self.debounce_ms.load(Ordering::Relaxed) * 2,
+            );
+            triggered.retain(|_, t| now.duration_since(*t) < ttl);
             if triggered.contains_key(&path) {
                 return;
             }
-            triggered.insert(path.clone(), true);
+            triggered.insert(path.clone(), now);
         }
 
         // 发送前端通知
@@ -480,6 +486,11 @@ impl FileWatcher {
             }
             watched.remove(pos);
         }
+        // 清除该路径的待处理变更，防止内存泄漏和残留触发
+        self.pending_changes
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(path);
         Ok(())
     }
 }
