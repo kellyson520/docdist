@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useArchiveStore } from '../../stores/archiveStore';
+import { shallow } from 'zustand/shallow';
 import { formatFileSize } from '../../utils/format';
 import { formatSmartTime } from '../../utils/time';
 import { TagBadge } from '../common/TagBadge';
@@ -10,7 +11,17 @@ type SortOrder = 'newest' | 'oldest';
 type FilterTag = string | null;
 
 export function TimelineView() {
-  const { timeline, selectedArchive, fetchTimeline, restoreArchive, deleteArchive, compareArchives } = useArchiveStore();
+  const { timeline, selectedArchive, fetchTimeline, restoreArchive, deleteArchive, compareArchives } = useArchiveStore(
+    (s) => ({
+      timeline: s.timeline,
+      selectedArchive: s.selectedArchive,
+      fetchTimeline: s.fetchTimeline,
+      restoreArchive: s.restoreArchive,
+      deleteArchive: s.deleteArchive,
+      compareArchives: s.compareArchives,
+    }),
+    shallow,
+  );
   const [sortOrder, setSortOrder] = useState<SortOrder>('newest');
   const [filterTag, setFilterTag] = useState<FilterTag>(null);
   const [showFilters, setShowFilters] = useState(false);

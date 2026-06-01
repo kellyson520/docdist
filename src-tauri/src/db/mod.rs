@@ -315,23 +315,24 @@ pub fn get_children(
 pub fn get_statistics(
     pool: &DbPool,
 ) -> Result<serde_json::Value, crate::error::AppError> {
-    let conn = pool.get()?;
+    let mut conn = pool.get()?;
+    let tx = conn
+        .transaction_with_behavior(rusqlite::TransactionBehavior::Deferred)?;
     let total: i64 =
-        conn.query_row("SELECT COUNT(*) FROM archives", [], |r| r.get(0))?;
-    let total_size: i64 = conn.query_row(
+        tx.query_row("SELECT COUNT(*) FROM archives", [], |r| r.get(0))?;
+    let total_size: i64 = tx.query_row(
         "SELECT COALESCE(SUM(file_size), 0) FROM archives",
         [],
         |r| r.get(0),
     )?;
-    let unique_files: i64 = conn.query_row(
+    let unique_files: i64 = tx.query_row(
         "SELECT COUNT(DISTINCT file_path) FROM archives",
         [],
         |r| r.get(0),
     )?;
     let total_chunks: i64 =
-        conn.query_row("SELECT COUNT(*) FROM archive_chunks", [], |r| {
-            r.get(0)
-        })?;
+        tx.query_row("SELECT COUNT(*) FROM archive_chunks", [], |r| r.get(0))?;
+    tx.commit()?;
     Ok(serde_json::json!({
         "total_archives": total,
         "total_size": total_size,
@@ -580,14 +581,37 @@ pub fn get_archive_detail(
     pool: &DbPool,
     id: &str,
 ) -> Result<Option<(Archive, Vec<String>)>, crate::error::AppError> {
-    let archive = get_archive(pool, id)?;
-    match archive {
-        Some(a) => {
-            let chunks = get_archive_chunks(pool, id)?;
-            Ok(Some((a, chunks)))
-        }
-        None => Ok(None),
-    }
+    let mut conn = pool.get()?;
+    let tx = conn
+        .transaction_with_behavior(rusqlite::TransactionBehavior::Deferred)?;
+    let mut archive_stmt = tx.prepare(&format!(
+        "SELECT {} FROM archives WHERE id = ?1",
+        SELECT_FIELDS
+    ))?;
+    let mut archive_rows =
+        archive_stmt.query_map(rusqlite::params![id], row_to_archive)?;
+    let archive = match archive_rows.next() {
+        Some(Ok(a)) => a,
+        Some(Err(e)) => return Err(crate::error::AppError::Db(e)),
+        None => return Ok(None),
+    };
+
+    let mut chunk_stmt = tx.prepare(
+        "SELECT chunk_hash FROM archive_chunks
+         WHERE archive_id = ?1 ORDER BY chunk_index",
+    )?;
+    let chunk_rows = chunk_stmt
+        .query_map(rusqlite::params![id], |row| row.get::<_, String>(0))?;
+    let chunks: Vec<String> = chunk_rows
+        .map(|r| {
+            r.map_err(|e| {
+                tracing::warn!("Failed to read chunk hash row: {}", e);
+                crate::error::AppError::Db(e)
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    Ok(Some((archive, chunks)))
 }
 
 #[cfg(test)]

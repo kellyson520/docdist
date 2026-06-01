@@ -1,11 +1,20 @@
 import { useState } from 'react';
 import { useArchiveStore } from '../../stores/archiveStore';
+import { shallow } from 'zustand/shallow';
 import { formatFileSize, formatDate } from '../../utils/format';
 import { Archive, RotateCcw, Maximize2, Plus, Clock, ChevronDown } from 'lucide-react';
 import { open } from '@tauri-apps/api/dialog';
 
 export function MiniMode({ onExpand }: { onExpand: () => void }) {
-  const { archives, createArchive, restoreArchive, fetchArchives } = useArchiveStore();
+  const { archives, createArchive, restoreArchive, fetchArchives } = useArchiveStore(
+    (s) => ({
+      archives: s.archives,
+      createArchive: s.createArchive,
+      restoreArchive: s.restoreArchive,
+      fetchArchives: s.fetchArchives,
+    }),
+    shallow,
+  );
   const [showRecent, setShowRecent] = useState(false);
 
   const recentArchives = archives.slice(0, 5);

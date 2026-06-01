@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useArchiveStore } from '../../stores/archiveStore';
+import { shallow } from 'zustand/shallow';
 import { toast } from '../../stores/toastStore';
 import {
   Eye,
@@ -22,7 +23,19 @@ export function WatcherPanel() {
     removeWatcherPath,
     fetchWatcherStatus,
     fetchConfig,
-  } = useArchiveStore();
+  } = useArchiveStore(
+    (s) => ({
+      watcherStatus: s.watcherStatus,
+      fileEvents: s.fileEvents,
+      startWatcher: s.startWatcher,
+      stopWatcher: s.stopWatcher,
+      addWatcherPath: s.addWatcherPath,
+      removeWatcherPath: s.removeWatcherPath,
+      fetchWatcherStatus: s.fetchWatcherStatus,
+      fetchConfig: s.fetchConfig,
+    }),
+    shallow,
+  );
 
   const [showEvents, setShowEvents] = useState(false);
 

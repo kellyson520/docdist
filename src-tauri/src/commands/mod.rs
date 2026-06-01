@@ -149,12 +149,17 @@ pub async fn start_watcher(
     let mut watcher = state.watcher.lock().unwrap_or_else(|e| e.into_inner());
 
     // 从配置读取防抖延迟（先提取值，再锁 watcher，避免 ABBA 死锁）
-    let debounce_secs = {
+    let (debounce_secs, min_file_size, max_file_size) = {
         let config = state.config.lock().unwrap_or_else(|e| e.into_inner());
-        config.watcher.auto_archive_delay
+        (
+            config.watcher.auto_archive_delay,
+            config.watcher.min_file_size,
+            config.watcher.max_file_size,
+        )
     };
     watcher
         .set_debounce_duration(std::time::Duration::from_secs(debounce_secs));
+    watcher.set_file_size_range(min_file_size, max_file_size);
 
     // 设置自动存档回调：通过 Tauri 事件通知前端
     let handle = app_handle.clone();

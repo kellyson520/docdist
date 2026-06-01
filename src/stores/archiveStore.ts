@@ -88,6 +88,9 @@ export interface ArchiveState {
   // Config
   config: AppConfig | null;
 
+  // Tree mutation revision counter (incremented on create/delete)
+  treeRevision: number;
+
   // ==================== Actions ====================
 
   // 存档 CRUD
@@ -164,6 +167,7 @@ export const useArchiveStore = create<ArchiveState>((set, get) => ({
   watcherStatus: { running: false, paths: [] },
   fileEvents: [],
   config: null,
+  treeRevision: 0,
 
   // ==================== 存档 CRUD ====================
 
@@ -223,6 +227,7 @@ export const useArchiveStore = create<ArchiveState>((set, get) => ({
       const { fetchArchives, searchQuery } = get();
       await fetchArchives(undefined, searchQuery || undefined);
       await get().fetchStatistics();
+      set(s => ({ treeRevision: s.treeRevision + 1 }));
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       log.error('创建存档失败', msg);
@@ -266,6 +271,7 @@ export const useArchiveStore = create<ArchiveState>((set, get) => ({
       });
       await fetchArchives(undefined, searchQuery || undefined);
       await get().fetchStatistics();
+      set(s => ({ treeRevision: s.treeRevision + 1 }));
     } catch (e: unknown) {
       set({ error: e instanceof Error ? e.message : String(e), loading: false });
     }
@@ -286,6 +292,7 @@ export const useArchiveStore = create<ArchiveState>((set, get) => ({
       });
       await fetchArchives(undefined, searchQuery || undefined);
       await get().fetchStatistics();
+      set(s => ({ treeRevision: s.treeRevision + 1 }));
       return count;
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -514,6 +521,7 @@ export const useArchiveStore = create<ArchiveState>((set, get) => ({
         const { fetchArchives, searchQuery } = get();
         await fetchArchives(undefined, searchQuery || undefined);
         await get().fetchStatistics();
+        set(s => ({ treeRevision: s.treeRevision + 1 }));
       } catch (e) {
         console.error('Auto-archive failed:', e);
       }

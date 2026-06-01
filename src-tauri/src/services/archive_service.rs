@@ -194,7 +194,11 @@ fn validate_target_path(path: &Path) -> Result<(), AppError> {
                 canon.push(name);
                 canon
             }
-            _ => path.to_path_buf(),
+            _ => {
+                return Err(AppError::Other(
+                    "无法解析目标路径的父目录".to_string(),
+                ));
+            }
         }
     };
 
@@ -296,6 +300,11 @@ impl ArchiveService {
 
         for (i, hash) in chunk_hashes.iter().enumerate() {
             let size = chunk_sizes[i];
+            if hash.len() < 2 {
+                return Err(AppError::Other(
+                    "hash too short for directory sharding".to_string(),
+                ));
+            }
             let storage_path = format!("{}/{}", &hash[..2], hash);
             tx.execute(
                 "INSERT INTO chunks (hash, size, ref_count, storage_path) \
@@ -343,10 +352,14 @@ impl ArchiveService {
             // Only delete chunks that are NOT referenced by other archives.
             // Transaction was rolled back, so DB reflects pre-transaction state.
             // - Hash NOT in chunks table → newly created chunk, safe to delete.
-            // - Hash in chunks table with ref_count > 0 → owned by another archive, MUST keep.
+            // If Hash in chunks table with ref_count > 0 → owned by another archive, MUST keep.
             if let Ok(cleanup_conn) = self.pool.get() {
                 for hash in &chunk_hashes {
-                    let chunk_path = self.chunks_dir.join(&hash[..2]).join(hash);
+                    if hash.len() < 2 {
+                        continue;
+                    }
+                    let chunk_path =
+                        self.chunks_dir.join(&hash[..2]).join(hash);
                     if !chunk_path.exists() {
                         continue;
                     }

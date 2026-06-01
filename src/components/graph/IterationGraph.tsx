@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/tauri';
 import { useArchiveStore } from '../../stores/archiveStore';
+import { shallow } from 'zustand/shallow';
 import { formatFileSize } from '../../utils/format';
 import { formatSmartTime } from '../../utils/time';
 import { GitBranch, FileText, RotateCcw, ChevronDown, ChevronRight, ZoomIn, ZoomOut } from 'lucide-react';
@@ -134,7 +135,14 @@ function TreeNodeComponent({
 }
 
 export function IterationGraph() {
-  const { selectArchive, restoreArchive } = useArchiveStore();
+  const { selectArchive, restoreArchive, treeRevision } = useArchiveStore(
+    (s) => ({
+      selectArchive: s.selectArchive,
+      restoreArchive: s.restoreArchive,
+      treeRevision: s.treeRevision,
+    }),
+    shallow,
+  );
   const [tree, setTree] = useState<TreeNode[]>([]);
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
   const [zoom, setZoom] = useState(1);
@@ -155,7 +163,7 @@ export function IterationGraph() {
 
   useEffect(() => {
     loadTree();
-  }, [loadTree]);
+  }, [loadTree, treeRevision]);
 
   const toggleNode = useCallback((id: string) => {
     setExpandedNodes(prev => {

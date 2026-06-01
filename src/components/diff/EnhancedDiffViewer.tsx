@@ -1,13 +1,21 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { FileText, Copy, Check, FileSearch } from 'lucide-react';
 import { useArchiveStore } from '../../stores/archiveStore';
+import { shallow } from 'zustand/shallow';
 import { DiffDetailView } from './DiffDetailView';
 import { SummaryView } from './SummaryView';
 import { RegionsView } from './RegionsView';
 import type { FileType } from '../../types/diff';
 
 export function EnhancedDiffViewer() {
-  const { enhancedDiffResult, loading, clearDiff } = useArchiveStore();
+  const { enhancedDiffResult, loading, clearDiff } = useArchiveStore(
+    (s) => ({
+      enhancedDiffResult: s.enhancedDiffResult,
+      loading: s.loading,
+      clearDiff: s.clearDiff,
+    }),
+    shallow,
+  );
   const [activeTab, setActiveTab] = useState<'diff' | 'summary' | 'regions'>('diff');
   const [copied, setCopied] = useState(false);
 

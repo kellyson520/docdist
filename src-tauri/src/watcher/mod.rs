@@ -37,6 +37,10 @@ pub struct FileWatcher {
     debounce_stop: Arc<AtomicBool>,
     /// 防抖线程句柄
     debounce_handle: Option<std::thread::JoinHandle<()>>,
+    /// 最小文件大小（字节），0 表示不限制
+    min_file_size: Arc<AtomicU64>,
+    /// 最大文件大小（字节），0 表示不限制
+    max_file_size: Arc<AtomicU64>,
 }
 
 impl FileWatcher {
@@ -60,6 +64,8 @@ impl FileWatcher {
             triggered_paths: Arc::new(Mutex::new(HashMap::new())),
             debounce_stop: Arc::new(AtomicBool::new(false)),
             debounce_handle: None,
+            min_file_size: Arc::new(AtomicU64::new(0)),
+            max_file_size: Arc::new(AtomicU64::new(100 * 1024 * 1024)),
         }
     }
 
@@ -89,6 +95,12 @@ impl FileWatcher {
     pub fn set_debounce_duration(&mut self, duration: Duration) {
         self.debounce_ms
             .store(duration.as_millis() as u64, Ordering::SeqCst);
+    }
+
+    /// 设置文件大小范围限制
+    pub fn set_file_size_range(&self, min: u64, max: u64) {
+        self.min_file_size.store(min, Ordering::Relaxed);
+        self.max_file_size.store(max, Ordering::Relaxed);
     }
 
     /// 设置自动存档回调
@@ -165,6 +177,8 @@ impl FileWatcher {
         let exclude = self.exclude_patterns.clone();
         let pending = self.pending_changes.clone();
         let event_tx = self.event_sender.clone();
+        let min_size = self.min_file_size.clone();
+        let max_size = self.max_file_size.clone();
 
         // 为 debounce 线程提前 clone
         let pending_debounce = self.pending_changes.clone();
@@ -195,6 +209,21 @@ impl FileWatcher {
                                 // 排除目录本身（只处理文件）
                                 if path.is_dir() {
                                     continue;
+                                }
+
+                                // 文件大小过滤
+                                if let Ok(metadata) = path.metadata() {
+                                    let file_len = metadata.len();
+                                    let min_s =
+                                        min_size.load(Ordering::Relaxed);
+                                    let max_s =
+                                        max_size.load(Ordering::Relaxed);
+                                    if min_s > 0 && file_len < min_s {
+                                        continue;
+                                    }
+                                    if max_s > 0 && file_len > max_s {
+                                        continue;
+                                    }
                                 }
 
                                 // 防抖：记录变更时间

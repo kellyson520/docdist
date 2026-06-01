@@ -1,9 +1,13 @@
 import { useArchiveStore } from '../../stores/archiveStore';
+import { shallow } from 'zustand/shallow';
 import { X, GitCompare, Copy, Check, ChevronDown, ChevronUp } from 'lucide-react';
 import { useState, useCallback, useEffect, useRef } from 'react';
 
 export function DiffViewer() {
-  const { diffResult, clearDiff, loading } = useArchiveStore();
+  const { diffResult, clearDiff, loading } = useArchiveStore(
+    (s) => ({ diffResult: s.diffResult, clearDiff: s.clearDiff, loading: s.loading }),
+    shallow
+  );
   const [copied, setCopied] = useState(false);
   const [collapsedHunks, setCollapsedHunks] = useState<Set<number>>(new Set());
   const [showStats, setShowStats] = useState(true);
