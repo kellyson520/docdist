@@ -4,6 +4,21 @@
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-06-01
+
+### Fixed
+- 🔒 **Critical安全修复** - export_history chunk路径错误（使用两级目录结构）
+- 🔒 **Critical安全修复** - get_archives_by_dir_before LIKE注入（转义通配符+ESCAPE子句）
+- 🔒 **Critical安全修复** - restore_directory zip-slip路径遍历（canonicalize验证）
+- 🛡️ **ErrorBoundary** - 添加全局错误边界防止白屏
+- ⚡ **SettingsPanel性能** - 添加shallow selector避免频繁重渲染
+
+### Security
+- 发现403个unwrap()需逐步清理
+- 发现符号链接攻击风险（需添加symlink_metadata检查）
+- 发现TOCTOU竞态（需使用文件句柄而非路径）
+- 发现zip 0.6.6有已知CVE（需升级到2.x）
+
 ## [0.1.1] - 2026-06-01
 
 ### Added
