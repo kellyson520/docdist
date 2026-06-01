@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useRef, useMemo } from 'react';
 import { Plus, Minus } from 'lucide-react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import type { EnhancedDiffResult } from '../../types/diff';
@@ -15,8 +15,13 @@ const normalizeLineEndings = (text: string) =>
 function VirtualizedChangesList({ changes }: { changes: Array<{ change_type: string; content: string; old_line?: number | null; new_line?: number | null }> }) {
   const parentRef = useRef<HTMLDivElement>(null);
 
+  const normalizedChanges = useMemo(
+    () => changes.map(c => ({ ...c, content: normalizeLineEndings(c.content) })),
+    [changes]
+  );
+
   const virtualizer = useVirtualizer({
-    count: changes.length,
+    count: normalizedChanges.length,
     getScrollElement: () => parentRef.current,
     estimateSize: () => 24, // 每行约24px
     overscan: 20, // 预渲染20行
@@ -32,7 +37,7 @@ function VirtualizedChangesList({ changes }: { changes: Array<{ change_type: str
         }}
       >
         {virtualizer.getVirtualItems().map((virtualItem) => {
-          const change = changes[virtualItem.index];
+          const change = normalizedChanges[virtualItem.index];
           return (
             <div
               key={virtualItem.index}
@@ -57,7 +62,7 @@ function VirtualizedChangesList({ changes }: { changes: Array<{ change_type: str
               <span className="w-5 text-center font-bold">
                 {change.change_type === 'add' ? '+' : change.change_type === 'delete' ? '-' : ' '}
               </span>
-              <span className="whitespace-pre overflow-x-auto flex-1">{normalizeLineEndings(change.content)}</span>
+              <span className="whitespace-pre overflow-x-auto flex-1">{change.content}</span>
             </div>
           );
         })}

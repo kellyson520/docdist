@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { FileText, Copy, Check, FileSearch } from 'lucide-react';
 import { useArchiveStore } from '../../stores/archiveStore';
 import { shallow } from 'zustand/shallow';
@@ -27,7 +27,7 @@ export function EnhancedDiffViewer() {
     };
   }, []);
 
-  const handleCopy = async () => {
+  const handleCopy = useCallback(async () => {
     if (!enhancedDiffResult) return;
 
     const text = enhancedDiffResult.summary.changes
@@ -42,7 +42,7 @@ export function EnhancedDiffViewer() {
     } catch (err) {
       console.error('复制失败:', err);
     }
-  };
+  }, [enhancedDiffResult]);
 
   if (loading) {
     return (
@@ -137,15 +137,15 @@ export function EnhancedDiffViewer() {
 
       {/* Tab Content */}
       <div className="flex-1 overflow-auto p-4">
-        {activeTab === 'diff' && (
+        <div style={{ display: activeTab === 'diff' ? 'block' : 'none' }}>
           <DiffDetailView result={enhancedDiffResult} />
-        )}
-        {activeTab === 'summary' && (
+        </div>
+        <div style={{ display: activeTab === 'summary' ? 'block' : 'none' }}>
           <SummaryView summary={enhancedDiffResult.summary} />
-        )}
-        {activeTab === 'regions' && (
+        </div>
+        <div style={{ display: activeTab === 'regions' ? 'block' : 'none' }}>
           <RegionsView regions={enhancedDiffResult.summary.affected_regions} />
-        )}
+        </div>
       </div>
     </div>
   );

@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useArchiveStore } from '../../stores/archiveStore';
 import { shallow } from 'zustand/shallow';
 import { formatFileSize } from '../../utils/format';
@@ -56,17 +56,22 @@ export function TimelineView() {
   }, [confirmAction, restoreArchive, deleteArchive]);
 
   // Get all unique tags from timeline
-  const allTags = Array.from(new Set(timeline.flatMap(a => a.tags ?? [])));
+  const allTags = useMemo(
+    () => Array.from(new Set(timeline.flatMap(a => a.tags ?? []))),
+    [timeline]
+  );
 
   // Filter and sort timeline
-  const filteredTimeline = timeline
-    .slice()
-    .filter(a => !filterTag || (a.tags ?? []).includes(filterTag))
-    .sort((a, b) => {
-      const dateA = new Date(a.created_at).getTime();
-      const dateB = new Date(b.created_at).getTime();
-      return sortOrder === 'newest' ? dateB - dateA : dateA - dateB;
-    });
+  const filteredTimeline = useMemo(() => {
+    return timeline
+      .slice()
+      .filter(a => !filterTag || (a.tags ?? []).includes(filterTag))
+      .sort((a, b) => {
+        const dateA = new Date(a.created_at).getTime();
+        const dateB = new Date(b.created_at).getTime();
+        return sortOrder === 'newest' ? dateB - dateA : dateA - dateB;
+      });
+  }, [timeline, filterTag, sortOrder]);
 
   if (!selectedArchive) {
     return (

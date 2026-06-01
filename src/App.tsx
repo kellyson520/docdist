@@ -1,12 +1,14 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback, useRef, Suspense } from 'react';
 import { useArchiveStore } from './stores/archiveStore';
 import { shallow } from 'zustand/shallow';
 import { ArchiveList } from './components/archive/ArchiveList';
 import { TimelineView } from './components/timeline/TimelineView';
-import { DiffViewer } from './components/diff/DiffViewer';
-import { EnhancedDiffViewer } from './components/diff/EnhancedDiffViewer';
-import { IterationGraph } from './components/graph/IterationGraph';
 import { MiniMode } from './components/mini/MiniMode';
+
+// Lazy load heavy view components
+const DiffViewer = React.lazy(() => import('./components/diff/DiffViewer').then(m => ({ default: m.DiffViewer })));
+const EnhancedDiffViewer = React.lazy(() => import('./components/diff/EnhancedDiffViewer').then(m => ({ default: m.EnhancedDiffViewer })));
+const IterationGraph = React.lazy(() => import('./components/graph/IterationGraph').then(m => ({ default: m.IterationGraph })));
 import { ThemeToggle } from './components/common/ThemeToggle';
 import { WatcherPanel } from './components/watcher/WatcherPanel';
 import { SettingsPanel } from './components/settings/SettingsPanel';
@@ -230,13 +232,15 @@ export default function App() {
         <div className="flex-1 flex flex-col overflow-hidden">
           <div className="flex-1 overflow-auto p-6 animate-fade-in">
             <ErrorBoundary>
-              {view === 'list' && <ArchiveList />}
-              {view === 'timeline' && <TimelineView />}
-              {view === 'diff' && (
-                showEnhancedDiff ? <EnhancedDiffViewer /> : <DiffViewer />
-              )}
-              {view === 'enhanced-diff' && <EnhancedDiffViewer />}
-              {view === 'graph' && <IterationGraph />}
+              <Suspense fallback={<div className="flex items-center justify-center h-full"><div className="animate-spin w-6 h-6 border-2 border-primary-400 border-t-transparent rounded-full" /></div>}>
+                {view === 'list' && <ArchiveList />}
+                {view === 'timeline' && <TimelineView />}
+                {view === 'diff' && (
+                  showEnhancedDiff ? <EnhancedDiffViewer /> : <DiffViewer />
+                )}
+                {view === 'enhanced-diff' && <EnhancedDiffViewer />}
+                {view === 'graph' && <IterationGraph />}
+              </Suspense>
             </ErrorBoundary>
           </div>
         </div>

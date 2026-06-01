@@ -86,7 +86,11 @@ pub fn init_database(
         CREATE INDEX IF NOT EXISTS idx_archives_created
             ON archives(created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_archive_chunks_hash
-            ON archive_chunks(chunk_hash);",
+            ON archive_chunks(chunk_hash);
+        CREATE INDEX IF NOT EXISTS idx_archives_path_time
+            ON archives(file_path, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_chunks_refcount
+            ON chunks(ref_count);",
     )?;
 
     Ok(pool)
