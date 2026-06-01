@@ -195,9 +195,9 @@ fn validate_target_path(path: &Path) -> Result<(), AppError> {
                 canon
             }
             _ => {
-                return Err(AppError::Other(
-                    "无法解析目标路径的父目录".to_string(),
-                ));
+                // 父目录不存在时（如restore到尚未创建的目录），使用原始路径
+                // 此时 .. 检查已在步骤1完成，符号链接无法解析（目录不存在）
+                path.to_path_buf()
             }
         }
     };
