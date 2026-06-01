@@ -235,7 +235,7 @@ impl ArchiveService {
             tags,
             parent_id: actual_parent,
             created_at: chrono::Utc::now()
-                .format("%Y-%m-%d %H:%M:%S")
+                .format("%Y-%m-%d %H:%M:%S%.3f")
                 .to_string(),
         };
 
@@ -1001,9 +1001,9 @@ mod tests {
             "first archive should have no parent"
         );
 
-        // 修改文件内容，等待1.1秒确保 created_at 不同（精度为秒）
+        // 修改文件内容，等待100ms确保 created_at 不同（含毫秒精度）
         fs::write(&file_path, b"version 2").unwrap();
-        std::thread::sleep(std::time::Duration::from_millis(1100));
+        std::thread::sleep(std::time::Duration::from_millis(100));
 
         // 第二次创建 — 应自动链接 parent
         let archive2 = service
@@ -1015,9 +1015,9 @@ mod tests {
             "second archive's parent should be the first archive"
         );
 
-        // 修改文件内容，等待1.1秒
+        // 修改文件内容，等待100ms
         fs::write(&file_path, b"version 3").unwrap();
-        std::thread::sleep(std::time::Duration::from_millis(1100));
+        std::thread::sleep(std::time::Duration::from_millis(100));
 
         // 第三次创建 — parent 应为第二次
         let archive3 = service
@@ -1293,11 +1293,11 @@ mod tests {
         let a1 = service.create_archive(&fp, "v1", vec![], None).unwrap();
 
         fs::write(&fp, b"v2").unwrap();
-        std::thread::sleep(std::time::Duration::from_millis(1100));
+        std::thread::sleep(std::time::Duration::from_millis(100));
         let a2 = service.create_archive(&fp, "v2", vec![], None).unwrap();
 
         fs::write(&fp, b"v3").unwrap();
-        std::thread::sleep(std::time::Duration::from_millis(1100));
+        std::thread::sleep(std::time::Duration::from_millis(100));
         let a3 = service.create_archive(&fp, "v3", vec![], None).unwrap();
 
         let timeline = service.get_timeline(&fp).unwrap();

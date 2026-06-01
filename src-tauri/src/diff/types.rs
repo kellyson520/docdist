@@ -95,6 +95,7 @@ pub enum RegionType {
 
 /// 文件类型检测结果
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
 pub enum FileType {
     Text {
         encoding: String,

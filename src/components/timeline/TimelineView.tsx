@@ -11,7 +11,7 @@ type SortOrder = 'newest' | 'oldest';
 type FilterTag = string | null;
 
 export function TimelineView() {
-  const { timeline, selectedArchive, fetchTimeline, restoreArchive, deleteArchive, compareArchives } = useArchiveStore(
+  const { timeline, selectedArchive, fetchTimeline, restoreArchive, deleteArchive, compareArchives, setView } = useArchiveStore(
     (s) => ({
       timeline: s.timeline,
       selectedArchive: s.selectedArchive,
@@ -19,6 +19,7 @@ export function TimelineView() {
       restoreArchive: s.restoreArchive,
       deleteArchive: s.deleteArchive,
       compareArchives: s.compareArchives,
+      setView: s.setView,
     }),
     shallow,
   );
@@ -38,10 +39,11 @@ export function TimelineView() {
     if (selectedForCompare && selectedForCompare !== archiveId) {
       compareArchives(selectedForCompare, archiveId);
       setSelectedForCompare(null);
+      setView('diff');
     } else {
       setSelectedForCompare(archiveId);
     }
-  }, [selectedForCompare, compareArchives]);
+  }, [selectedForCompare, compareArchives, setView]);
 
   const handleConfirm = useCallback(() => {
     if (!confirmAction) return;
@@ -214,7 +216,7 @@ export function TimelineView() {
                   <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                     {formatFileSize(archive.file_size)} · {archive.chunk_count} 块
                     {archive.checksum && (
-                      <span className="ml-2 text-gray-400 dark:text-gray-500">#{archive.checksum.slice(0, 8)}</span>
+                      <span className="ml-2 text-gray-400 dark:text-gray-500">#{filteredTimeline.length - index}</span>
                     )}
                   </div>
 

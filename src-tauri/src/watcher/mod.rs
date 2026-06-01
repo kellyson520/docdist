@@ -142,7 +142,7 @@ impl FileWatcher {
             path: path.clone(),
             event_type: "auto_archive_pending".to_string(),
             timestamp: chrono::Utc::now()
-                .format("%Y-%m-%d %H:%M:%S")
+                .format("%Y-%m-%d %H:%M:%S%.3f")
                 .to_string(),
         };
         self.emit_event(event);
@@ -255,7 +255,7 @@ impl FileWatcher {
                                         path: path_str.clone(),
                                         event_type: "detected".to_string(),
                                         timestamp: chrono::Utc::now()
-                                            .format("%Y-%m-%d %H:%M:%S")
+                                            .format("%Y-%m-%d %H:%M:%S%.3f")
                                             .to_string(),
                                     };
                                     let _ =
@@ -330,7 +330,7 @@ impl FileWatcher {
                             path: path.clone(),
                             event_type: "auto_archive_triggered".to_string(),
                             timestamp: chrono::Utc::now()
-                                .format("%Y-%m-%d %H:%M:%S")
+                                .format("%Y-%m-%d %H:%M:%S%.3f")
                                 .to_string(),
                         };
                         let _ = handle.emit_all("file-changed", &evt);

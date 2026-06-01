@@ -30,6 +30,7 @@ export function VersionTreeView() {
     restoreArchive,
     deleteArchive,
     compareArchives,
+    setView,
     starArchive,
     unstarArchive,
     exportHistory,
@@ -43,6 +44,7 @@ export function VersionTreeView() {
       restoreArchive: s.restoreArchive,
       deleteArchive: s.deleteArchive,
       compareArchives: s.compareArchives,
+      setView: s.setView,
       starArchive: s.starArchive,
       unstarArchive: s.unstarArchive,
       exportHistory: s.exportHistory,
@@ -82,11 +84,12 @@ export function VersionTreeView() {
       if (selectedForCompare && selectedForCompare !== archiveId) {
         compareArchives(selectedForCompare, archiveId);
         setSelectedForCompare(null);
+        setView('diff');
       } else {
         setSelectedForCompare(archiveId);
       }
     },
-    [selectedForCompare, compareArchives],
+    [selectedForCompare, compareArchives, setView],
   );
 
   const handleConfirm = useCallback(() => {
@@ -310,7 +313,7 @@ export function VersionTreeView() {
                     {formatFileSize(archive.file_size)} · {archive.chunk_count} 块
                     {archive.checksum && (
                       <span className="ml-2 text-gray-400 dark:text-gray-500">
-                        #{archive.checksum.slice(0, 8)}
+                        #{sortedHistory.length - index}
                       </span>
                     )}
                   </div>
