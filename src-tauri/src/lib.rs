@@ -196,6 +196,14 @@ pub fn run() {
             commands::update_config,
             // 日志管理
             commands::read_log_file,
+            // 版本管理
+            commands::star_archive,
+            commands::unstar_archive,
+            commands::get_starred_archives,
+            commands::search_archives_by_path,
+            commands::get_file_history,
+            commands::restore_directory,
+            commands::export_history,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

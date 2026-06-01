@@ -160,6 +160,16 @@ pub struct ArchiveService {
 }
 
 impl ArchiveService {
+    /// 获取数据库连接池引用
+    pub fn db(&self) -> &DbPool {
+        &self.pool
+    }
+
+    /// 获取 chunks 存储目录
+    pub fn chunks_dir(&self) -> &std::path::Path {
+        &self.chunks_dir
+    }
+
     pub fn new(pool: DbPool, data_dir: &Path, chunk_size: usize) -> Self {
         let chunks_dir = data_dir.join("chunks");
         if let Err(e) = std::fs::create_dir_all(&chunks_dir) {

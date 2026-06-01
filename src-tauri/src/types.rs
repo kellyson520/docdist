@@ -19,6 +19,37 @@ pub struct Archive {
     pub created_at: String,
 }
 
+/// 存档简要信息（用于列表展示）
+pub type ArchiveInfo = Archive;
+
+/// 已标记的重要版本
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../src/types/generated/")]
+pub struct StarredArchive {
+    pub archive: ArchiveInfo,
+    pub star_id: String,
+    pub label: String,
+}
+
+/// 目录恢复结果
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../src/types/generated/")]
+pub struct RestoreDirectoryResult {
+    pub restored_count: usize,
+    pub skipped_count: usize,
+    pub errors: Vec<String>,
+}
+
+/// 历史导出结果
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../src/types/generated/")]
+pub struct ExportResult {
+    pub output_path: String,
+    pub archive_count: usize,
+    #[ts(type = "number")]
+    pub total_size: u64,
+}
+
 /// 差异结果
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export, export_to = "../src/types/generated/")]

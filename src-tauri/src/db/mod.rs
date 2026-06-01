@@ -70,6 +70,15 @@ pub fn init_database(
             PRIMARY KEY (archive_id, chunk_index),
             CHECK(chunk_index >= 0)
         );
+        CREATE TABLE IF NOT EXISTS archive_stars (
+            id TEXT PRIMARY KEY,
+            archive_id TEXT NOT NULL REFERENCES archives(id) ON DELETE CASCADE,
+            label TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            UNIQUE(archive_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_archive_stars_archive
+            ON archive_stars(archive_id);
         CREATE INDEX IF NOT EXISTS idx_archives_path
             ON archives(file_path);
         CREATE INDEX IF NOT EXISTS idx_archives_parent
@@ -665,6 +674,195 @@ pub fn get_archive_detail(
 
     Ok(Some((archive, chunks)))
 }
+/// 标记一个存档为重要版本
+#[allow(dead_code)]
+pub fn star_archive(
+    pool: &DbPool,
+    archive_id: &str,
+    label: &str,
+) -> Result<(), crate::error::AppError> {
+    let conn = pool.get()?;
+    let id = uuid::Uuid::new_v4().to_string();
+    conn.execute(
+        "INSERT OR REPLACE INTO archive_stars (id, archive_id, label) VALUES (?1, ?2, ?3)",
+        rusqlite::params![id, archive_id, label],
+    )?;
+    Ok(())
+}
+
+/// 取消标记
+#[allow(dead_code)]
+pub fn unstar_archive(
+    pool: &DbPool,
+    archive_id: &str,
+) -> Result<(), crate::error::AppError> {
+    let conn = pool.get()?;
+    conn.execute(
+        "DELETE FROM archive_stars WHERE archive_id = ?1",
+        rusqlite::params![archive_id],
+    )?;
+    Ok(())
+}
+
+/// 获取所有标记的版本
+#[allow(dead_code)]
+pub fn get_starred_archives(
+    pool: &DbPool,
+) -> Result<Vec<(Archive, String, String)>, crate::error::AppError> {
+    // Returns (Archive, star_id, label)
+    let conn = pool.get()?;
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {}, s.id as star_id, s.label FROM archives a
+         INNER JOIN archive_stars s ON a.id = s.archive_id
+         ORDER BY s.created_at DESC",
+        SELECT_FIELDS
+            .replace("id,", "a.id,")
+            .replace("file_path", "a.file_path")
+            .replace("file_name", "a.file_name")
+            .replace("file_size", "a.file_size")
+            .replace("checksum", "a.checksum")
+            .replace("chunk_count", "a.chunk_count")
+            .replace("note", "a.note")
+            .replace("tags", "a.tags")
+            .replace("parent_id", "a.parent_id")
+            .replace("created_at", "a.created_at")
+    ))?;
+    let rows = stmt.query_map([], |row| {
+        let archive = row_to_archive(row)?;
+        let star_id: String = row.get(10)?;
+        let label: String = row.get(11)?;
+        Ok((archive, star_id, label))
+    })?;
+    let results: Vec<(Archive, String, String)> = rows
+        .map(|r| {
+            r.map_err(|e| {
+                tracing::warn!("Failed to read starred archive row: {}", e);
+                crate::error::AppError::Db(e)
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(results)
+}
+
+/// 按路径模式搜索存档（支持前缀匹配）
+#[allow(dead_code)]
+pub fn get_archives_by_path_pattern(
+    pool: &DbPool,
+    pattern: &str,
+) -> Result<Vec<Archive>, crate::error::AppError> {
+    let conn = pool.get()?;
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {} FROM archives WHERE file_path LIKE ?1 ESCAPE '\\'
+         ORDER BY created_at DESC LIMIT 500",
+        SELECT_FIELDS
+    ))?;
+    let escaped = pattern
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_");
+    let like_pattern = format!("%{}%", escaped);
+    let rows =
+        stmt.query_map(rusqlite::params![like_pattern], row_to_archive)?;
+    let archives: Vec<Archive> = rows
+        .map(|r| {
+            r.map_err(|e| {
+                tracing::warn!("Failed to read archive row: {}", e);
+                crate::error::AppError::Db(e)
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(archives)
+}
+
+/// 检查存档是否已被标记
+#[allow(dead_code)]
+pub fn is_archived_starred(
+    pool: &DbPool,
+    archive_id: &str,
+) -> Result<bool, crate::error::AppError> {
+    let conn = pool.get()?;
+    let count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM archive_stars WHERE archive_id = ?1",
+        rusqlite::params![archive_id],
+        |row| row.get(0),
+    )?;
+    Ok(count > 0)
+}
+
+/// 按精确文件路径查询存档
+#[allow(dead_code)]
+pub fn get_archives_by_file_path(
+    pool: &DbPool,
+    file_path: &str,
+) -> Result<Vec<Archive>, crate::error::AppError> {
+    let conn = pool.get()?;
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {} FROM archives WHERE file_path = ?1 ORDER BY created_at DESC",
+        SELECT_FIELDS
+    ))?;
+    let rows = stmt.query_map(rusqlite::params![file_path], row_to_archive)?;
+    let archives: Vec<Archive> = rows
+        .map(|r| {
+            r.map_err(|e| {
+                tracing::warn!("Failed to read archive row: {}", e);
+                crate::error::AppError::Db(e)
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(archives)
+}
+
+/// 按目录路径和时间点查询存档（目录前缀匹配 + 时间过滤）
+#[allow(dead_code)]
+pub fn get_archives_by_dir_before(
+    pool: &DbPool,
+    dir_path: &str,
+    before: &str,
+) -> Result<Vec<Archive>, crate::error::AppError> {
+    let conn = pool.get()?;
+    let pattern = format!("{}/%", dir_path);
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {} FROM archives WHERE file_path LIKE ?1 AND created_at <= ?2
+         ORDER BY file_path, created_at DESC",
+        SELECT_FIELDS
+    ))?;
+    let rows =
+        stmt.query_map(rusqlite::params![pattern, before], row_to_archive)?;
+    let archives: Vec<Archive> = rows
+        .map(|r| {
+            r.map_err(|e| {
+                tracing::warn!("Failed to read archive row: {}", e);
+                crate::error::AppError::Db(e)
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(archives)
+}
+
+/// 获取指定存档的 chunk hash 列表
+#[allow(dead_code)]
+pub fn get_archive_chunk_hashes(
+    pool: &DbPool,
+    archive_id: &str,
+) -> Result<Vec<String>, crate::error::AppError> {
+    let conn = pool.get()?;
+    let mut stmt = conn.prepare(
+        "SELECT chunk_hash FROM archive_chunks
+         WHERE archive_id = ?1 ORDER BY chunk_index",
+    )?;
+    let rows = stmt.query_map(rusqlite::params![archive_id], |row| {
+        row.get::<_, String>(0)
+    })?;
+    let chunks: Vec<String> = rows
+        .map(|r| {
+            r.map_err(|e| {
+                tracing::warn!("Failed to read chunk hash row: {}", e);
+                crate::error::AppError::Db(e)
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(chunks)
+}
 
 #[cfg(test)]
 mod tests {
@@ -724,6 +922,15 @@ mod tests {
                 PRIMARY KEY (archive_id, chunk_index),
                 CHECK(chunk_index >= 0)
             );
+            CREATE TABLE IF NOT EXISTS archive_stars (
+                id TEXT PRIMARY KEY,
+                archive_id TEXT NOT NULL REFERENCES archives(id) ON DELETE CASCADE,
+                label TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                UNIQUE(archive_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_archive_stars_archive
+                ON archive_stars(archive_id);
             CREATE INDEX IF NOT EXISTS idx_archives_path
                 ON archives(file_path);
             CREATE INDEX IF NOT EXISTS idx_archives_parent
@@ -1773,5 +1980,172 @@ mod tests {
         // 验证全部成功读回
         let got = get_archive(&pool, "valid1").unwrap();
         assert!(got.is_some());
+    }
+
+    // ============================================================
+    // archive_stars 表功能测试
+    // ============================================================
+
+    #[test]
+    fn test_init_database_creates_archive_stars_table() {
+        let pool = setup_db();
+        let conn = pool.get().unwrap();
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM archive_stars", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn test_star_archive_and_is_archived_starred() {
+        let pool = setup_db();
+        let archive = make_archive("star1", "/docs/v1.pdf", "v1.pdf");
+        insert_archive(&pool, &archive).unwrap();
+
+        // Initially not starred
+        assert!(!is_archived_starred(&pool, "star1").unwrap());
+
+        // Star it
+        star_archive(&pool, "star1", "重要版本").unwrap();
+
+        // Now starred
+        assert!(is_archived_starred(&pool, "star1").unwrap());
+    }
+
+    #[test]
+    fn test_star_archive_replaces_label() {
+        let pool = setup_db();
+        let archive = make_archive("star_r", "/docs/r.pdf", "r.pdf");
+        insert_archive(&pool, &archive).unwrap();
+
+        star_archive(&pool, "star_r", "旧标签").unwrap();
+        star_archive(&pool, "star_r", "新标签").unwrap();
+
+        let starred = get_starred_archives(&pool).unwrap();
+        assert_eq!(starred.len(), 1);
+        assert_eq!(starred[0].2, "新标签");
+    }
+
+    #[test]
+    fn test_unstar_archive() {
+        let pool = setup_db();
+        let archive = make_archive("star2", "/docs/v2.pdf", "v2.pdf");
+        insert_archive(&pool, &archive).unwrap();
+
+        star_archive(&pool, "star2", "标签").unwrap();
+        assert!(is_archived_starred(&pool, "star2").unwrap());
+
+        unstar_archive(&pool, "star2").unwrap();
+        assert!(!is_archived_starred(&pool, "star2").unwrap());
+    }
+
+    #[test]
+    fn test_unstar_archive_nonexistent() {
+        let pool = setup_db();
+        // 取消标记不存在的记录不报错，只是 0 行受影响
+        unstar_archive(&pool, "nonexistent").unwrap();
+    }
+
+    #[test]
+    fn test_get_starred_archives_empty() {
+        let pool = setup_db();
+        let starred = get_starred_archives(&pool).unwrap();
+        assert!(starred.is_empty());
+    }
+
+    #[test]
+    fn test_get_starred_archives_returns_data() {
+        let pool = setup_db();
+        let a1 = make_archive("gs1", "/docs/a.pdf", "a.pdf");
+        let a2 = make_archive("gs2", "/docs/b.pdf", "b.pdf");
+        insert_archive(&pool, &a1).unwrap();
+        insert_archive(&pool, &a2).unwrap();
+
+        star_archive(&pool, "gs1", "版本一").unwrap();
+        star_archive(&pool, "gs2", "版本二").unwrap();
+
+        let starred = get_starred_archives(&pool).unwrap();
+        assert_eq!(starred.len(), 2);
+        // 按 created_at DESC 排序，后插入的在前
+        let labels: Vec<&str> =
+            starred.iter().map(|(_, _, l)| l.as_str()).collect();
+        assert!(labels.contains(&"版本一"));
+        assert!(labels.contains(&"版本二"));
+    }
+
+    #[test]
+    fn test_is_archived_starred_nonexistent() {
+        let pool = setup_db();
+        assert!(!is_archived_starred(&pool, "no_such_id").unwrap());
+    }
+
+    #[test]
+    fn test_get_archives_by_path_pattern() {
+        let pool = setup_db();
+        insert_archive(
+            &pool,
+            &make_archive("pp1", "/docs/reports/2025/q1.pdf", "q1.pdf"),
+        )
+        .unwrap();
+        insert_archive(
+            &pool,
+            &make_archive("pp2", "/docs/reports/2025/q2.pdf", "q2.pdf"),
+        )
+        .unwrap();
+        insert_archive(
+            &pool,
+            &make_archive("pp3", "/images/photo.jpg", "photo.jpg"),
+        )
+        .unwrap();
+
+        let results =
+            get_archives_by_path_pattern(&pool, "reports/2025").unwrap();
+        assert_eq!(results.len(), 2);
+        assert!(results.iter().all(|a| a.file_path.contains("reports/2025")));
+    }
+
+    #[test]
+    fn test_get_archives_by_path_pattern_no_match() {
+        let pool = setup_db();
+        insert_archive(&pool, &make_archive("pp_nm", "/docs/a.pdf", "a.pdf"))
+            .unwrap();
+
+        let results =
+            get_archives_by_path_pattern(&pool, "nonexistent_path").unwrap();
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_get_archives_by_path_pattern_escapes_wildcards() {
+        let pool = setup_db();
+        // 文件路径中包含 % 和 _ 等 LIKE 通配符
+        insert_archive(
+            &pool,
+            &make_archive("pp_esc", "/docs/100%_done/report.pdf", "report.pdf"),
+        )
+        .unwrap();
+        insert_archive(
+            &pool,
+            &make_archive("pp_other", "/docs/other/report.pdf", "report.pdf"),
+        )
+        .unwrap();
+
+        let results = get_archives_by_path_pattern(&pool, "100%_done").unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].id, "pp_esc");
+    }
+
+    #[test]
+    fn test_star_archive_cascade_delete() {
+        let pool = setup_db();
+        let archive = make_archive("star_cd", "/docs/cd.pdf", "cd.pdf");
+        insert_archive(&pool, &archive).unwrap();
+        star_archive(&pool, "star_cd", "级联测试").unwrap();
+
+        assert!(is_archived_starred(&pool, "star_cd").unwrap());
+
+        // 删除 archive 后，star 记录应因 CASCADE 被自动删除
+        delete_archive(&pool, "star_cd").unwrap();
+        assert!(!is_archived_starred(&pool, "star_cd").unwrap());
     }
 }

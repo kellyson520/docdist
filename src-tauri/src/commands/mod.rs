@@ -1,9 +1,10 @@
 use crate::config::AppConfig;
-use crate::db::Archive;
+use crate::db::{self, Archive};
 use crate::diff::types::EnhancedDiffResult;
 use crate::diff::DiffResult;
 use crate::error::AppError;
 use crate::storage;
+use crate::types::{ExportResult, RestoreDirectoryResult, StarredArchive};
 use crate::AppState;
 use tauri::Manager;
 use tauri::State;
@@ -327,4 +328,208 @@ pub async fn update_config(
         .set_debounce_duration(std::time::Duration::from_secs(debounce_secs));
 
     Ok(())
+}
+
+// ==================== 版本管理 ====================
+
+/// 标记一个存档为重要版本
+#[tauri::command]
+pub async fn star_archive(
+    state: State<'_, AppState>,
+    archive_id: String,
+    label: String,
+) -> Result<(), AppError> {
+    db::star_archive(state.service.db(), &archive_id, &label)?;
+    Ok(())
+}
+
+/// 取消标记
+#[tauri::command]
+pub async fn unstar_archive(
+    state: State<'_, AppState>,
+    archive_id: String,
+) -> Result<(), AppError> {
+    db::unstar_archive(state.service.db(), &archive_id)?;
+    Ok(())
+}
+
+/// 获取所有标记的版本
+#[tauri::command]
+pub async fn get_starred_archives(
+    state: State<'_, AppState>,
+) -> Result<Vec<StarredArchive>, AppError> {
+    let results = db::get_starred_archives(state.service.db())?;
+    Ok(results
+        .into_iter()
+        .map(|(archive, star_id, label)| StarredArchive {
+            archive: crate::types::Archive {
+                id: archive.id,
+                file_path: archive.file_path,
+                file_name: archive.file_name,
+                file_size: archive.file_size,
+                checksum: archive.checksum,
+                chunk_count: archive.chunk_count,
+                note: archive.note,
+                tags: archive.tags,
+                parent_id: archive.parent_id,
+                created_at: archive.created_at,
+            },
+            star_id,
+            label,
+        })
+        .collect())
+}
+
+/// 按路径模式搜索存档
+#[tauri::command]
+pub async fn search_archives_by_path(
+    state: State<'_, AppState>,
+    pattern: String,
+) -> Result<Vec<Archive>, AppError> {
+    db::get_archives_by_path_pattern(state.service.db(), &pattern)
+}
+
+/// 获取单个文件的完整版本历史（按时间排序）
+#[tauri::command]
+pub async fn get_file_history(
+    state: State<'_, AppState>,
+    file_path: String,
+) -> Result<Vec<Archive>, AppError> {
+    db::get_archives_by_file_path(state.service.db(), &file_path)
+}
+
+/// 目录级恢复：恢复某目录下所有文件到指定时间点之前的最新版本
+#[tauri::command]
+pub async fn restore_directory(
+    state: State<'_, AppState>,
+    dir_path: String,
+    before_timestamp: String,
+    output_dir: String,
+) -> Result<RestoreDirectoryResult, AppError> {
+    // 获取该目录下在指定时间之前的所有存档
+    let archives = db::get_archives_by_dir_before(
+        state.service.db(),
+        &dir_path,
+        &before_timestamp,
+    )?;
+
+    // 按文件路径分组，取每个文件最新的存档
+    use std::collections::HashMap;
+    let mut latest_per_file: HashMap<String, &Archive> = HashMap::new();
+    for archive in &archives {
+        latest_per_file
+            .entry(archive.file_path.clone())
+            .and_modify(|e| {
+                if archive.created_at > e.created_at {
+                    *e = archive;
+                }
+            })
+            .or_insert(archive);
+    }
+
+    let mut restored_count = 0usize;
+    let mut skipped_count = 0usize;
+    let mut errors = Vec::new();
+
+    std::fs::create_dir_all(&output_dir)?;
+
+    for (_path, archive) in &latest_per_file {
+        let output_path =
+            std::path::PathBuf::from(&output_dir).join(&archive.file_name);
+        match state.service.restore_archive(
+            &archive.id,
+            Some(output_path.to_str().unwrap_or("")),
+        ) {
+            Ok(()) => restored_count += 1,
+            Err(e) => {
+                errors.push(format!("{}: {}", archive.file_path, e));
+                skipped_count += 1;
+            }
+        }
+    }
+
+    Ok(RestoreDirectoryResult {
+        restored_count,
+        skipped_count,
+        errors,
+    })
+}
+
+/// 导出历史为ZIP包
+#[tauri::command]
+pub async fn export_history(
+    state: State<'_, AppState>,
+    file_path: Option<String>,
+    output_dir: String,
+) -> Result<ExportResult, AppError> {
+    // 获取要导出的存档列表
+    let archives = if let Some(ref fp) = file_path {
+        db::get_archives_by_file_path(state.service.db(), fp)?
+    } else {
+        db::get_all_archives(state.service.db(), None, None)?
+    };
+
+    if archives.is_empty() {
+        return Err(AppError::Other("没有找到可导出的存档".to_string()));
+    }
+
+    // 构建 ZIP 文件
+    std::fs::create_dir_all(&output_dir)?;
+    let output_path = std::path::PathBuf::from(&output_dir).join(format!(
+        "history_export_{}.zip",
+        chrono::Utc::now().format("%Y%m%d_%H%M%S")
+    ));
+
+    let zip_file = std::fs::File::create(&output_path)?;
+    let mut zip = zip::ZipWriter::new(zip_file);
+    let options = zip::write::FileOptions::default()
+        .compression_method(zip::CompressionMethod::Stored);
+
+    // 写入 manifest.json
+    let manifest = serde_json::json!({
+        "exported_at": chrono::Utc::now().to_rfc3339(),
+        "archive_count": archives.len(),
+        "file_filter": file_path,
+        "archives": archives.iter().map(|a| serde_json::json!({
+            "id": a.id,
+            "file_path": a.file_path,
+            "file_name": a.file_name,
+            "file_size": a.file_size,
+            "checksum": a.checksum,
+            "note": a.note,
+            "tags": a.tags,
+            "created_at": a.created_at,
+        })).collect::<Vec<_>>(),
+    });
+    zip.start_file("manifest.json", options)?;
+    use std::io::Write;
+    zip.write_all(serde_json::to_string_pretty(&manifest)?.as_bytes())?;
+
+    // 写入各存档的 chunk 文件
+    let chunks_dir = state.service.chunks_dir();
+    let mut total_size = 0u64;
+    for archive in &archives {
+        let chunk_hashes =
+            db::get_archive_chunk_hashes(state.service.db(), &archive.id)?;
+        let mut data = Vec::new();
+        for hash in &chunk_hashes {
+            let chunk_path = chunks_dir.join(hash);
+            if chunk_path.exists() {
+                data.extend_from_slice(&std::fs::read(&chunk_path)?);
+            }
+        }
+        let filename = format!("{}.bin", archive.id);
+        zip.start_file(&filename, options)?;
+        zip.write_all(&data)?;
+        total_size += data.len() as u64;
+    }
+
+    zip.finish()?;
+    let file_size = std::fs::metadata(&output_path)?.len();
+
+    Ok(ExportResult {
+        output_path: output_path.to_string_lossy().to_string(),
+        archive_count: archives.len(),
+        total_size: file_size,
+    })
 }

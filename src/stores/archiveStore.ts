@@ -3,7 +3,7 @@ import { toast } from './toastStore';
 import { createLogger } from '../utils/logger';
 import { invoke } from '@tauri-apps/api/tauri';
 import { listen } from '@tauri-apps/api/event';
-import type { Archive, DiffResult, Statistics } from '../types';
+import type { Archive, DiffResult, Statistics, StarredArchive, ArchiveInfo, ExportResult } from '../types';
 import type { EnhancedDiffResult } from '../types/diff';
 
 const log = createLogger('store');
@@ -91,6 +91,10 @@ export interface ArchiveState {
   // Tree mutation revision counter (incremented on create/delete)
   treeRevision: number;
 
+  // Version management
+  starredArchives: StarredArchive[];
+  fileHistory: ArchiveInfo[];
+
   // ==================== Actions ====================
 
   // 存档 CRUD
@@ -135,6 +139,14 @@ export interface ArchiveState {
   cleanupOrphanChunks: () => Promise<CleanupStats>;
   verifyChunks: () => Promise<string[]>;
 
+  // Version management
+  starArchive: (archiveId: string, label: string) => Promise<void>;
+  unstarArchive: (archiveId: string) => Promise<void>;
+  fetchStarredArchives: () => Promise<void>;
+  fetchFileHistory: (filePath: string) => Promise<void>;
+  searchByPath: (pattern: string) => Promise<ArchiveInfo[]>;
+  exportHistory: (filePath: string | null, outputDir: string) => Promise<ExportResult | null>;
+
   // 事件监听
   setupEventListeners: () => () => void;
 }
@@ -168,6 +180,8 @@ export const useArchiveStore = create<ArchiveState>((set, get) => ({
   fileEvents: [],
   config: null,
   treeRevision: 0,
+  starredArchives: [],
+  fileHistory: [],
 
   // ==================== 存档 CRUD ====================
 
@@ -494,6 +508,66 @@ export const useArchiveStore = create<ArchiveState>((set, get) => ({
   },
 
   // ==================== 事件监听 ====================
+
+  // ==================== 版本管理 ====================
+
+  starArchive: async (archiveId: string, label: string) => {
+    try {
+      await invoke('star_archive', { archiveId, label });
+      get().fetchStarredArchives();
+      toast.success('已标记', label || '重要版本');
+    } catch (e: unknown) {
+      toast.error('标记失败', e instanceof Error ? e.message : String(e));
+    }
+  },
+
+  unstarArchive: async (archiveId: string) => {
+    try {
+      await invoke('unstar_archive', { archiveId });
+      get().fetchStarredArchives();
+      toast.success('已取消标记');
+    } catch (e: unknown) {
+      toast.error('操作失败', e instanceof Error ? e.message : String(e));
+    }
+  },
+
+  fetchStarredArchives: async () => {
+    try {
+      const result = await invoke<StarredArchive[]>('get_starred_archives');
+      set({ starredArchives: result });
+    } catch (e: unknown) {
+      console.error('fetchStarredArchives failed:', e);
+    }
+  },
+
+  fetchFileHistory: async (filePath: string) => {
+    try {
+      const result = await invoke<ArchiveInfo[]>('get_file_history', { filePath });
+      set({ fileHistory: result });
+    } catch (e: unknown) {
+      console.error('fetchFileHistory failed:', e);
+    }
+  },
+
+  searchByPath: async (pattern: string) => {
+    try {
+      return await invoke<ArchiveInfo[]>('search_archives_by_path', { pattern });
+    } catch (e: unknown) {
+      console.error('searchByPath failed:', e);
+      return [];
+    }
+  },
+
+  exportHistory: async (filePath: string | null, outputDir: string) => {
+    try {
+      const result = await invoke<ExportResult>('export_history', { filePath, outputPath: outputDir });
+      toast.success('导出完成', result.output_path);
+      return result;
+    } catch (e: unknown) {
+      toast.error('导出失败', e instanceof Error ? e.message : String(e));
+      return null;
+    }
+  },
 
   setupEventListeners: () => {
     // 监听文件变化事件

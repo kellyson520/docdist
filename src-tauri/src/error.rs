@@ -8,6 +8,8 @@ pub enum AppError {
     Db(#[from] rusqlite::Error),
     #[error("序列化错误: {0}")]
     Serde(#[from] serde_json::Error),
+    #[error("压缩文件错误: {0}")]
+    Zip(#[from] zip::result::ZipError),
     #[error("连接池错误: {0}")]
     Pool(#[from] r2d2::Error),
     #[error("{0}")]
