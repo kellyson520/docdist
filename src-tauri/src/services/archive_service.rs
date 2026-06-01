@@ -1774,4 +1774,273 @@ mod tests {
         let result = service.create_archive(&file_path, "ok", vec![], None);
         assert!(result.is_ok(), "should allow normal user file");
     }
+
+    // ================================================================
+    // 端到端集成测试：模拟完整用户工作流
+    // ================================================================
+
+    /// 模拟用户创建文件 → 多次修改 → 对比 → 恢复 → 删除的完整流程
+    #[test]
+    fn test_e2e_full_user_workflow() {
+        let (service, dir) = setup_service();
+
+        // === Step 1: 用户创建一个文件 ===
+        let file_path = create_test_file(
+            &dir,
+            "document.txt",
+            b"Version 1: Hello World\nThis is the first version.\n",
+        );
+
+        // === Step 2: 用户第一次归档 ===
+        let archive1 = service
+            .create_archive(
+                &file_path,
+                "初始版本",
+                vec!["v1".to_string()],
+                None,
+            )
+            .expect("Step 2: 第一次归档应成功");
+
+        assert!(archive1.parent_id.is_none(), "第一次归档应无父存档");
+        assert_eq!(archive1.file_name, "document.txt");
+        assert!(archive1.file_size > 0);
+
+        // === Step 3: 用户修改文件后第二次归档 ===
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        fs::write(
+            &file_path,
+            b"Version 2: Hello World\nThis is the second version.\nAdded new line.\n",
+        )
+        .unwrap();
+
+        let archive2 = service
+            .create_archive(
+                &file_path,
+                "第二次修改",
+                vec!["v2".to_string()],
+                None,
+            )
+            .expect("Step 3: 第二次归档应成功");
+
+        assert!(archive2.parent_id.is_some(), "第二次归档应有父存档");
+        assert_eq!(
+            archive2.parent_id.as_ref().unwrap(),
+            &archive1.id,
+            "第二次归档的父存档应是第一次归档"
+        );
+
+        // === Step 4: 用户第三次修改并归档 ===
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        fs::write(
+            &file_path,
+            b"Version 3: Hello Universe\nThis is the third version.\nAdded new line.\nFinal line.\n",
+        )
+        .unwrap();
+
+        let archive3 = service
+            .create_archive(
+                &file_path,
+                "第三次修改",
+                vec!["v3".to_string()],
+                None,
+            )
+            .expect("Step 4: 第三次归档应成功");
+
+        assert_eq!(
+            archive3.parent_id.as_ref().unwrap(),
+            &archive2.id,
+            "第三次归档的父存档应是第二次归档"
+        );
+
+        // === Step 5: 获取时间轴，验证排序 ===
+        let timeline = service
+            .get_timeline(&file_path)
+            .expect("Step 5: 获取时间轴应成功");
+
+        assert_eq!(timeline.len(), 3, "时间轴应有3个存档");
+        // 时间轴按 created_at DESC 排序
+        assert_eq!(timeline[0].id, archive3.id, "最新存档应排第一");
+        assert_eq!(timeline[1].id, archive2.id, "第二新存档应排第二");
+        assert_eq!(timeline[2].id, archive1.id, "最旧存档应排最后");
+
+        // === Step 6: 基础对比 — 第一版 vs 第三版 ===
+        let diff = service
+            .compare_archives(&archive1.id, &archive3.id)
+            .expect("Step 6: 对比应成功");
+
+        assert!(
+            diff.stats.additions > 0 || diff.stats.deletions > 0,
+            "不同版本应有差异，additions={}, deletions={}",
+            diff.stats.additions,
+            diff.stats.deletions
+        );
+
+        // === Step 7: 增强对比 — 第一版 vs 第三版 ===
+        let enhanced = service
+            .compare_archives_enhanced(&archive1.id, &archive3.id)
+            .expect("Step 7: 增强对比应成功");
+
+        assert!(
+            enhanced.diff_result.stats.additions > 0
+                || enhanced.diff_result.stats.deletions > 0,
+            "增强对比应有差异"
+        );
+        // 验证 file_type 现在有正确的 type 字段
+        match &enhanced.file_type {
+            crate::diff::types::FileType::Text { encoding, .. } => {
+                assert!(!encoding.is_empty(), "文本文件应有编码信息");
+            }
+            other => {
+                panic!(
+                    "document.txt 应该被识别为 Text 类型，实际: {:?}",
+                    other
+                );
+            }
+        }
+
+        // === Step 8: 恢复第一版到新路径 ===
+        let restore_path = dir
+            .path()
+            .join("restored_v1.txt")
+            .to_string_lossy()
+            .to_string();
+        service
+            .restore_archive(&archive1.id, Some(&restore_path))
+            .expect("Step 8: 恢复应成功");
+
+        let restored_content =
+            fs::read(&restore_path).expect("恢复的文件应存在");
+        assert!(
+            restored_content.windows(9).any(|w| w == b"Version 1"),
+            "恢复的文件应包含 Version 1 内容"
+        );
+
+        // === Step 9: 恢复第三版到原路径（覆盖当前文件） ===
+        service
+            .restore_archive(&archive3.id, None)
+            .expect("Step 9: 恢复到原路径应成功");
+
+        let current_content = fs::read(&file_path).expect("原文件应存在");
+        assert!(
+            current_content.windows(9).any(|w| w == b"Version 3"),
+            "恢复到原路径后应包含 Version 3 内容"
+        );
+
+        // === Step 10: 删除中间版本 ===
+        service
+            .delete_archive(&archive2.id)
+            .expect("Step 10: 删除中间版本应成功");
+
+        // 验证删除后时间轴只剩2个
+        let timeline_after = service
+            .get_timeline(&file_path)
+            .expect("Step 10: 获取时间轴应成功");
+        assert_eq!(timeline_after.len(), 2, "删除后时间轴应剩2个存档");
+
+        // 验证第一版和第三版仍可对比
+        let diff_after = service
+            .compare_archives(&archive1.id, &archive3.id)
+            .expect("Step 10: 删除中间版本后仍应能对比");
+        assert!(
+            diff_after.stats.additions > 0 || diff_after.stats.deletions > 0,
+            "删除中间版本后对比仍应有差异"
+        );
+    }
+
+    /// 测试：同一文件相同内容多次归档（应产生不同ID但相同checksum）
+    #[test]
+    fn test_e2e_same_content_multiple_archives() {
+        let (service, dir) = setup_service();
+        let file_path =
+            create_test_file(&dir, "same.txt", b"unchanged content");
+
+        let a1 = service
+            .create_archive(&file_path, "v1", vec![], None)
+            .expect("第一次归档应成功");
+
+        std::thread::sleep(std::time::Duration::from_millis(100));
+
+        let a2 = service
+            .create_archive(&file_path, "v2", vec![], None)
+            .expect("第二次归档应成功");
+
+        // 两次归档应产生不同ID
+        assert_ne!(a1.id, a2.id, "不同归档应有不同ID");
+
+        // 但 checksum 应相同（内容相同）
+        assert_eq!(a1.checksum, a2.checksum, "相同内容应有相同checksum");
+
+        // 对比两个相同内容的归档应无差异
+        let diff = service
+            .compare_archives(&a1.id, &a2.id)
+            .expect("对比应成功");
+        assert_eq!(diff.stats.additions, 0, "相同内容对比应无新增");
+        assert_eq!(diff.stats.deletions, 0, "相同内容对比应无删除");
+    }
+
+    /// 测试：增强对比的序列化格式（验证 serde(tag = "type") 修复）
+    #[test]
+    fn test_e2e_enhanced_diff_serialization() {
+        let (service, dir) = setup_service();
+        let file_path =
+            create_test_file(&dir, "serial.txt", b"line 1\nline 2\n");
+
+        let a1 = service
+            .create_archive(&file_path, "v1", vec![], None)
+            .unwrap();
+
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        fs::write(&file_path, b"line 1\nline 2\nline 3\n").unwrap();
+
+        let a2 = service
+            .create_archive(&file_path, "v2", vec![], None)
+            .unwrap();
+
+        let enhanced =
+            service.compare_archives_enhanced(&a1.id, &a2.id).unwrap();
+
+        // 序列化为 JSON，验证 type 字段存在
+        let json = serde_json::to_value(&enhanced.file_type)
+            .expect("FileType 应可序列化");
+
+        assert!(
+            json.get("type").is_some(),
+            "FileType JSON 应包含 'type' 字段，实际: {:?}",
+            json
+        );
+        assert_eq!(
+            json["type"].as_str().unwrap(),
+            "Text",
+            "text 文件应序列化为 type: 'Text'"
+        );
+        assert!(
+            json.get("encoding").is_some(),
+            "Text 类型应包含 encoding 字段"
+        );
+    }
+
+    /// 测试：恢复到不存在的目录应自动创建
+    #[test]
+    fn test_e2e_restore_creates_parent_dirs() {
+        let (service, dir) = setup_service();
+        let file_path = create_test_file(&dir, "nested.txt", b"nested content");
+
+        let archive = service
+            .create_archive(&file_path, "test", vec![], None)
+            .unwrap();
+
+        // 恢复到不存在的嵌套目录
+        let restore_path = dir
+            .path()
+            .join("deep/nested/path/restored.txt")
+            .to_string_lossy()
+            .to_string();
+
+        service
+            .restore_archive(&archive.id, Some(&restore_path))
+            .expect("恢复到嵌套目录应成功");
+
+        let content = fs::read(&restore_path).expect("恢复的文件应存在");
+        assert_eq!(content, b"nested content", "恢复的内容应一致");
+    }
 }
