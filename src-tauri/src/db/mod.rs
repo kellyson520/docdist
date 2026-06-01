@@ -840,9 +840,14 @@ pub fn get_archives_by_dir_before(
     before: &str,
 ) -> Result<Vec<Archive>, crate::error::AppError> {
     let conn = pool.get()?;
-    let pattern = format!("{}/%", dir_path);
+    // 转义 LIKE 通配符防止注入
+    let escaped = dir_path
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_");
+    let pattern = format!("{}/%", escaped);
     let mut stmt = conn.prepare(&format!(
-        "SELECT {} FROM archives WHERE file_path LIKE ?1 AND created_at <= ?2
+        "SELECT {} FROM archives WHERE file_path LIKE ?1 ESCAPE '\\' AND created_at <= ?2
          ORDER BY file_path, created_at DESC",
         SELECT_FIELDS
     ))?;

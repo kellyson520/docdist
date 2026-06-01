@@ -432,10 +432,30 @@ pub async fn restore_directory(
     let mut errors = Vec::new();
 
     std::fs::create_dir_all(&output_dir)?;
+    let output_dir_canonical = std::fs::canonicalize(&output_dir)?;
 
     for archive in latest_per_file.values() {
         let output_path =
             std::path::PathBuf::from(&output_dir).join(&archive.file_name);
+        
+        // 防止 zip-slip 路径遍历攻击
+        match output_path.parent() {
+            Some(parent) => {
+                if let Ok(canonical_parent) = std::fs::canonicalize(parent) {
+                    if !canonical_parent.starts_with(&output_dir_canonical) {
+                        errors.push(format!("{}: 路径安全检查失败", archive.file_path));
+                        skipped_count += 1;
+                        continue;
+                    }
+                }
+            }
+            None => {
+                errors.push(format!("{}: 无效的输出路径", archive.file_path));
+                skipped_count += 1;
+                continue;
+            }
+        }
+        
         match state.service.restore_archive(
             &archive.id,
             Some(output_path.to_str().unwrap_or("")),
@@ -512,7 +532,12 @@ pub async fn export_history(
             db::get_archive_chunk_hashes(state.service.db(), &archive.id)?;
         let mut data = Vec::new();
         for hash in &chunk_hashes {
-            let chunk_path = chunks_dir.join(hash);
+            // 使用两级目录结构（与其他存储代码一致）
+            let chunk_path = if hash.len() >= 2 {
+                chunks_dir.join(&hash[..2]).join(hash)
+            } else {
+                chunks_dir.join(hash)
+            };
             if chunk_path.exists() {
                 data.extend_from_slice(&std::fs::read(&chunk_path)?);
             }

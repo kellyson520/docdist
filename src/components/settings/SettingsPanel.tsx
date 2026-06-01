@@ -1,11 +1,21 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { useArchiveStore, type AppConfig } from '../../stores/archiveStore';
+import { shallow } from 'zustand/shallow';
 import { Settings, Save, RotateCcw, Trash2, Shield } from 'lucide-react';
 import { formatFileSize } from '../../utils/format';
 
 export function SettingsPanel({ onClose }: { onClose: () => void }) {
   const { config, fetchConfig, updateConfig, cleanupOrphanChunks, verifyChunks } =
-    useArchiveStore();
+    useArchiveStore(
+      (s) => ({
+        config: s.config,
+        fetchConfig: s.fetchConfig,
+        updateConfig: s.updateConfig,
+        cleanupOrphanChunks: s.cleanupOrphanChunks,
+        verifyChunks: s.verifyChunks,
+      }),
+      shallow
+    );
 
   const [localConfig, setLocalConfig] = useState<AppConfig | null>(null);
   const [saving, setSaving] = useState(false);

@@ -12,6 +12,7 @@ import { WatcherPanel } from './components/watcher/WatcherPanel';
 import { SettingsPanel } from './components/settings/SettingsPanel';
 import { ToastContainer } from './components/common/ToastContainer';
 import { LogViewer } from './components/common/LogViewer';
+import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { formatFileSize } from './utils/format';
 import { FolderOpen, Clock, GitCompare, GitBranch, Minimize2, Settings, Terminal } from 'lucide-react';
 import './styles/themes.css';
@@ -228,13 +229,15 @@ export default function App() {
         {/* Main content */}
         <div className="flex-1 flex flex-col overflow-hidden">
           <div className="flex-1 overflow-auto p-6 animate-fade-in">
-            {view === 'list' && <ArchiveList />}
-            {view === 'timeline' && <TimelineView />}
-            {view === 'diff' && (
-              showEnhancedDiff ? <EnhancedDiffViewer /> : <DiffViewer />
-            )}
-            {view === 'enhanced-diff' && <EnhancedDiffViewer />}
-            {view === 'graph' && <IterationGraph />}
+            <ErrorBoundary>
+              {view === 'list' && <ArchiveList />}
+              {view === 'timeline' && <TimelineView />}
+              {view === 'diff' && (
+                showEnhancedDiff ? <EnhancedDiffViewer /> : <DiffViewer />
+              )}
+              {view === 'enhanced-diff' && <EnhancedDiffViewer />}
+              {view === 'graph' && <IterationGraph />}
+            </ErrorBoundary>
           </div>
         </div>
 
