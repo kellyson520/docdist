@@ -12,6 +12,11 @@
 - 🔒 **Critical安全修复** - restore_directory zip-slip路径遍历（canonicalize验证）
 - 🛡️ **ErrorBoundary** - 添加全局错误边界防止白屏
 - ⚡ **SettingsPanel性能** - 添加shallow selector避免频繁重渲染
+- 🐛 **版本对比无法使用** - TimelineView/VersionTreeView对比后不切换视图，用户看不到结果
+- 🐛 **增强对比无法使用** - FileType枚举缺少serde(tag)导致前后端序列化格式不匹配
+- 🐛 **时间轴序号显示** - 用版本序号#1/#2/#3替代checksum片段#6f7809c4
+- 🐛 **时间戳精度** - created_at从秒级升级到毫秒级，同一秒内存档不再排序混乱
+- 📄 **卸载清理指南** - 添加uninstall-cleanup.md脚本（Windows/macOS/Linux）
 
 ### Security
 - 🔒 **符号链接攻击防护** - store_file添加symlink_metadata检查，拒绝符号链接文件
