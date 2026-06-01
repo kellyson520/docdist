@@ -258,6 +258,29 @@ pub fn get_all_archives(
     Ok(archives)
 }
 
+/// 一次性加载所有存档并按 parent_id 分组（用于树构建，避免 N+1 查询）
+#[allow(dead_code)]
+pub fn get_all_archives_grouped_by_parent(
+    pool: &DbPool,
+) -> Result<std::collections::HashMap<String, Vec<Archive>>, crate::error::AppError> {
+    let conn = pool.get()?;
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {} FROM archives ORDER BY created_at",
+        SELECT_FIELDS
+    ))?;
+    let rows = stmt.query_map([], row_to_archive)?;
+    let mut map: std::collections::HashMap<String, Vec<Archive>> = std::collections::HashMap::new();
+    for row in rows {
+        let archive = row.map_err(|e| {
+            tracing::warn!("Failed to read archive row: {}", e);
+            crate::error::AppError::Db(e)
+        })?;
+        let parent_key = archive.parent_id.clone().unwrap_or_default();
+        map.entry(parent_key).or_default().push(archive);
+    }
+    Ok(map)
+}
+
 pub fn get_archive(
     pool: &DbPool,
     id: &str,
@@ -684,7 +707,8 @@ pub fn star_archive(
     let conn = pool.get()?;
     let id = uuid::Uuid::new_v4().to_string();
     conn.execute(
-        "INSERT OR REPLACE INTO archive_stars (id, archive_id, label) VALUES (?1, ?2, ?3)",
+        "INSERT INTO archive_stars (id, archive_id, label) VALUES (?1, ?2, ?3)
+         ON CONFLICT (archive_id) DO UPDATE SET label = excluded.label",
         rusqlite::params![id, archive_id, label],
     )?;
     Ok(())
@@ -2139,5 +2163,82 @@ mod tests {
         // 删除 archive 后，star 记录应因 CASCADE 被自动删除
         delete_archive(&pool, "star_cd").unwrap();
         assert!(!is_archived_starred(&pool, "star_cd").unwrap());
+    }
+
+    #[test]
+    fn test_get_archives_by_dir_before() {
+        let pool = setup_db();
+        
+        // 创建不同时间的存档
+        let mut a1 = make_archive("dir1", "/docs/reports/q1.pdf", "q1.pdf");
+        a1.created_at = "2025-01-01 00:00:00".to_string();
+        insert_archive(&pool, &a1).unwrap();
+
+        let mut a2 = make_archive("dir2", "/docs/reports/q2.pdf", "q2.pdf");
+        a2.created_at = "2025-06-01 00:00:00".to_string();
+        insert_archive(&pool, &a2).unwrap();
+
+        let mut a3 = make_archive("dir3", "/docs/reports/q3.pdf", "q3.pdf");
+        a3.created_at = "2025-12-01 00:00:00".to_string();
+        insert_archive(&pool, &a3).unwrap();
+
+        // 不相关目录
+        let mut other = make_archive("dir_other", "/images/photo.jpg", "photo.jpg");
+        other.created_at = "2025-03-01 00:00:00".to_string();
+        insert_archive(&pool, &other).unwrap();
+
+        // 查询 2025-07-01 之前的 /docs/reports/ 目录存档
+        let results = get_archives_by_dir_before(
+            &pool,
+            "/docs/reports",
+            "2025-07-01 00:00:00",
+        )
+        .unwrap();
+        
+        // 应该返回 q1 和 q2（按 file_path, created_at DESC 排序）
+        assert_eq!(results.len(), 2);
+        assert!(results.iter().any(|a| a.id == "dir1"));
+        assert!(results.iter().any(|a| a.id == "dir2"));
+        assert!(!results.iter().any(|a| a.id == "dir3")); // 12月的不应返回
+        assert!(!results.iter().any(|a| a.id == "dir_other")); // 不同目录
+    }
+
+    #[test]
+    fn test_get_archives_by_dir_before_empty() {
+        let pool = setup_db();
+        let results =
+            get_archives_by_dir_before(&pool, "/nonexistent", "2025-12-31 23:59:59").unwrap();
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_get_all_archives_grouped_by_parent() {
+        let pool = setup_db();
+        
+        let mut parent = make_archive("grp_parent", "/docs/parent.pdf", "parent.pdf");
+        parent.parent_id = None;
+        insert_archive(&pool, &parent).unwrap();
+
+        let mut child1 = make_archive("grp_child1", "/docs/child1.pdf", "child1.pdf");
+        child1.parent_id = Some("grp_parent".to_string());
+        insert_archive(&pool, &child1).unwrap();
+
+        let mut child2 = make_archive("grp_child2", "/docs/child2.pdf", "child2.pdf");
+        child2.parent_id = Some("grp_parent".to_string());
+        insert_archive(&pool, &child2).unwrap();
+
+        let mut orphan = make_archive("grp_orphan", "/docs/orphan.pdf", "orphan.pdf");
+        orphan.parent_id = None;
+        insert_archive(&pool, &orphan).unwrap();
+
+        let grouped = get_all_archives_grouped_by_parent(&pool).unwrap();
+        
+        // parent_id=None 的应归入 "" 键
+        let roots = grouped.get("").unwrap();
+        assert_eq!(roots.len(), 2); // parent 和 orphan
+        
+        // parent_id="grp_parent" 的应归入 "grp_parent" 键
+        let children = grouped.get("grp_parent").unwrap();
+        assert_eq!(children.len(), 2); // child1 和 child2
     }
 }

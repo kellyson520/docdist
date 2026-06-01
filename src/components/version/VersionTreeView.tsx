@@ -57,11 +57,12 @@ export function VersionTreeView() {
   const [starTarget, setStarTarget] = useState<string | null>(null);
   const [showStarredOnly, setShowStarredOnly] = useState(false);
 
+  const filePath = selectedArchive?.file_path;
   useEffect(() => {
-    if (selectedArchive) {
-      fetchFileHistory(selectedArchive.file_path);
+    if (filePath) {
+      fetchFileHistory(filePath);
     }
-  }, [selectedArchive, fetchFileHistory]);
+  }, [filePath, fetchFileHistory]);
 
   useEffect(() => {
     fetchStarredArchives();

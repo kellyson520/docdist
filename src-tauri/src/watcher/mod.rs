@@ -529,3 +529,45 @@ fn is_path_excluded(path_str: &str, patterns: &[String]) -> bool {
     }
     false
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_path_excluded_with_glob_pattern() {
+        let patterns = vec!["*.tmp".to_string(), "*.log".to_string()];
+        assert!(is_path_excluded("/foo/bar.tmp", &patterns));
+        assert!(is_path_excluded("/foo/bar.log", &patterns));
+        assert!(!is_path_excluded("/foo/bar.txt", &patterns));
+    }
+
+    #[test]
+    fn test_is_path_excluded_with_directory_pattern() {
+        let patterns = vec![".git".to_string(), "node_modules".to_string()];
+        assert!(is_path_excluded("/foo/.git/config", &patterns));
+        assert!(is_path_excluded("/foo/.git", &patterns));
+        assert!(is_path_excluded("/foo/node_modules/bar", &patterns));
+        assert!(!is_path_excluded("/foo/bar.txt", &patterns));
+    }
+
+    #[test]
+    fn test_is_path_excluded_case_insensitive() {
+        let patterns = vec!["*.TMP".to_string(), ".GIT".to_string()];
+        assert!(is_path_excluded("/foo/bar.tmp", &patterns));
+        assert!(is_path_excluded("/foo/.git/config", &patterns));
+    }
+
+    #[test]
+    fn test_is_path_excluded_empty_patterns() {
+        let patterns: Vec<String> = vec![];
+        assert!(!is_path_excluded("/foo/bar.txt", &patterns));
+    }
+
+    #[test]
+    fn test_is_path_excluded_nested_path() {
+        let patterns = vec![".git".to_string()];
+        assert!(is_path_excluded("/foo/bar/.git/objects/pack", &patterns));
+        assert!(!is_path_excluded("/foo/bar/git/config", &patterns));
+    }
+}

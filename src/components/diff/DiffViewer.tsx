@@ -2,6 +2,7 @@ import { useArchiveStore } from '../../stores/archiveStore';
 import { shallow } from 'zustand/shallow';
 import { X, GitCompare, Copy, Check, ChevronDown, ChevronUp } from 'lucide-react';
 import { useState, useCallback, useEffect, useRef } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 
 export function DiffViewer() {
   const { diffResult, clearDiff, loading } = useArchiveStore(
@@ -181,7 +182,7 @@ export function DiffViewer() {
       )}
 
       {/* Diff Content */}
-      <div className="flex-1 overflow-y-auto font-mono text-xs">
+      <div ref={parentRef} className="flex-1 overflow-y-auto font-mono text-xs">
         {diffResult.hunks.map((hunk, hunkIdx) => {
           const isExpanded = !collapsedHunks.has(hunkIdx);
           
@@ -201,36 +202,67 @@ export function DiffViewer() {
                 </span>
               </button>
 
-              {/* Changes */}
+              {/* Changes - 使用虚拟化渲染优化大量数据 */}
               {isExpanded && (
-                <div>
-                  {hunk.changes.map((change, changeIdx) => (
-                    <div
-                      key={changeIdx}
-                      className={`flex px-4 py-0.5 hover:brightness-95 transition ${
-                        change.change_type === 'add'
-                          ? 'bg-green-50 dark:bg-green-900/20 text-green-800 dark:text-green-300'
-                          : change.change_type === 'delete'
-                          ? 'bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-300'
-                          : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300'
-                      }`}
-                    >
-                      <span className="w-10 text-right pr-3 text-gray-400 dark:text-gray-600 select-none flex-shrink-0">
-                        {change.old_line ?? ''}
-                      </span>
-                      <span className="w-10 text-right pr-3 text-gray-400 dark:text-gray-600 select-none flex-shrink-0">
-                        {change.new_line ?? ''}
-                      </span>
-                      <span className="w-5 text-center select-none flex-shrink-0 font-bold">
-                        {change.change_type === 'add' ? '+' : change.change_type === 'delete' ? '-' : ' '}
-                      </span>
-                      <span className="whitespace-pre overflow-x-auto flex-1">
-                        {change.content}
-                      </span>
-                    </div>
-                  ))}
-                </div>
+                <VirtualizedChangesList changes={hunk.changes} />
               )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// 虚拟化渲染 changes 列表的子组件
+function VirtualizedChangesList({ changes }: { changes: Array<{ change_type: string; content: string; old_line?: number; new_line?: number }> }) {
+  const parentRef = useRef<HTMLDivElement>(null);
+
+  const virtualizer = useVirtualizer({
+    count: changes.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => 24, // 每行约24px
+    overscan: 20, // 预渲染20行
+  });
+
+  return (
+    <div ref={parentRef} className="max-h-[400px] overflow-y-auto">
+      <div
+        style={{
+          height: `${virtualizer.getTotalSize()}px`,
+          width: '100%',
+          position: 'relative',
+        }}
+      >
+        {virtualizer.getVirtualItems().map((virtualItem) => {
+          const change = changes[virtualItem.index];
+          return (
+            <div
+              key={virtualItem.index}
+              className={`absolute top-0 left-0 w-full flex px-4 py-0.5 hover:brightness-95 transition ${
+                change.change_type === 'add'
+                  ? 'bg-green-50 dark:bg-green-900/20 text-green-800 dark:text-green-300'
+                  : change.change_type === 'delete'
+                  ? 'bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-300'
+                  : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300'
+              }`}
+              style={{
+                height: `${virtualItem.size}px`,
+                transform: `translateY(${virtualItem.start}px)`,
+              }}
+            >
+              <span className="w-10 text-right pr-3 text-gray-400 dark:text-gray-600 select-none flex-shrink-0">
+                {change.old_line ?? ''}
+              </span>
+              <span className="w-10 text-right pr-3 text-gray-400 dark:text-gray-600 select-none flex-shrink-0">
+                {change.new_line ?? ''}
+              </span>
+              <span className="w-5 text-center select-none flex-shrink-0 font-bold">
+                {change.change_type === 'add' ? '+' : change.change_type === 'delete' ? '-' : ' '}
+              </span>
+              <span className="whitespace-pre overflow-x-auto flex-1">
+                {change.content}
+              </span>
             </div>
           );
         })}

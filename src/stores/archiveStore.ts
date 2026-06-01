@@ -287,7 +287,10 @@ export const useArchiveStore = create<ArchiveState>((set, get) => ({
       await get().fetchStatistics();
       set(s => ({ treeRevision: s.treeRevision + 1 }));
     } catch (e: unknown) {
-      set({ error: e instanceof Error ? e.message : String(e), loading: false });
+      const msg = e instanceof Error ? e.message : String(e);
+      log.error('删除存档失败', msg);
+      toast.error('删除失败', msg);
+      set({ error: msg, loading: false });
     }
   },
 
@@ -461,8 +464,12 @@ export const useArchiveStore = create<ArchiveState>((set, get) => ({
   setWatcherExcludePatterns: async (patterns: string[]) => {
     try {
       await invoke('set_watcher_exclude_patterns', { patterns });
+      toast.success('排除规则已更新');
+      await get().fetchConfig();
     } catch (e: unknown) {
-      set({ error: e instanceof Error ? e.message : String(e) });
+      const msg = e instanceof Error ? e.message : String(e);
+      toast.error('更新排除规则失败', msg);
+      set({ error: msg });
     }
   },
 
@@ -513,21 +520,31 @@ export const useArchiveStore = create<ArchiveState>((set, get) => ({
 
   starArchive: async (archiveId: string, label: string) => {
     try {
+      set({ loading: true, error: null });
       await invoke('star_archive', { archiveId, label });
-      get().fetchStarredArchives();
+      await get().fetchStarredArchives();
       toast.success('已标记', label || '重要版本');
     } catch (e: unknown) {
-      toast.error('标记失败', e instanceof Error ? e.message : String(e));
+      const msg = e instanceof Error ? e.message : String(e);
+      toast.error('标记失败', msg);
+      set({ error: msg });
+    } finally {
+      set({ loading: false });
     }
   },
 
   unstarArchive: async (archiveId: string) => {
     try {
+      set({ loading: true, error: null });
       await invoke('unstar_archive', { archiveId });
-      get().fetchStarredArchives();
+      await get().fetchStarredArchives();
       toast.success('已取消标记');
     } catch (e: unknown) {
-      toast.error('操作失败', e instanceof Error ? e.message : String(e));
+      const msg = e instanceof Error ? e.message : String(e);
+      toast.error('取消标记失败', msg);
+      set({ error: msg });
+    } finally {
+      set({ loading: false });
     }
   },
 
@@ -536,7 +553,10 @@ export const useArchiveStore = create<ArchiveState>((set, get) => ({
       const result = await invoke<StarredArchive[]>('get_starred_archives');
       set({ starredArchives: result });
     } catch (e: unknown) {
-      console.error('fetchStarredArchives failed:', e);
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error('fetchStarredArchives failed:', msg);
+      set({ starredArchives: [], error: msg });
+      toast.error('加载标记版本失败', msg);
     }
   },
 
@@ -545,10 +565,12 @@ export const useArchiveStore = create<ArchiveState>((set, get) => ({
       const result = await invoke<ArchiveInfo[]>('get_file_history', { filePath });
       set({ fileHistory: result });
     } catch (e: unknown) {
-      console.error('fetchFileHistory failed:', e);
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error('fetchFileHistory failed:', msg);
+      set({ fileHistory: [], error: msg });
+      toast.error('加载版本历史失败', msg);
     }
   },
-
   searchByPath: async (pattern: string) => {
     try {
       return await invoke<ArchiveInfo[]>('search_archives_by_path', { pattern });
@@ -560,6 +582,10 @@ export const useArchiveStore = create<ArchiveState>((set, get) => ({
 
   exportHistory: async (filePath: string | null, outputDir: string) => {
     try {
+      if (!outputDir || outputDir.trim().length === 0) {
+        toast.error('导出失败', '请选择输出目录');
+        return null;
+      }
       const result = await invoke<ExportResult>('export_history', { filePath, outputPath: outputDir });
       toast.success('导出完成', result.output_path);
       return result;

@@ -628,20 +628,25 @@ impl ArchiveService {
         Ok(result)
     }
 
-    /// 迭代收集归档节点及其所有后代（BFS）
+    /// 迭代收集归档节点及其所有后代（BFS）——优化版，一次性加载所有存档避免 N+1 查询
     fn collect_descendants_iterative(
         &self,
         root: &Archive,
     ) -> Result<Vec<Archive>, AppError> {
+        // 一次性加载所有存档并按 parent_id 分组
+        let grouped = db::get_all_archives_grouped_by_parent(&self.pool)?;
+
         let mut result = Vec::new();
         let mut queue = VecDeque::new();
         queue.push_back(root.clone());
 
         while let Some(current) = queue.pop_front() {
             result.push(current.clone());
-            let children = db::get_children(&self.pool, &current.id)?;
-            for child in children {
-                queue.push_back(child);
+            // 从分组中获取子节点，而非逐个查询数据库
+            if let Some(children) = grouped.get(&current.id) {
+                for child in children {
+                    queue.push_back(child.clone());
+                }
             }
         }
         Ok(result)

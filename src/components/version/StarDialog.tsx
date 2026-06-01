@@ -22,7 +22,8 @@ export function StarDialog({ open, defaultLabel = '', onConfirm, onCancel }: Sta
     if (open) {
       setLabel(defaultLabel);
       // Focus input on open
-      setTimeout(() => inputRef.current?.focus(), 50);
+      const timer = setTimeout(() => inputRef.current?.focus(), 50);
+      return () => clearTimeout(timer);
     }
   }, [open, defaultLabel]);
 
@@ -85,16 +86,25 @@ export function StarDialog({ open, defaultLabel = '', onConfirm, onCancel }: Sta
             ref={inputRef}
             type="text"
             value={label}
-            onChange={(e) => setLabel(e.target.value)}
+            onChange={(e) => {
+              const val = e.target.value;
+              if (val.length <= 100) {
+                setLabel(val);
+              }
+            }}
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
                 e.preventDefault();
-                onConfirm(label);
+                const trimmed = label.trim();
+                if (trimmed.length > 0) {
+                  onConfirm(trimmed);
+                }
               }
             }}
-            placeholder="例如：发布版本 v1.0"
+            placeholder="例如：发布版本 v1.0（最多100字符）"
             className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
           />
+          <div className="text-xs text-gray-400 mt-1">{label.length}/100</div>
         </div>
 
         <div className="flex justify-end gap-3">
@@ -106,8 +116,18 @@ export function StarDialog({ open, defaultLabel = '', onConfirm, onCancel }: Sta
           </button>
           <button
             ref={confirmBtnRef}
-            onClick={() => onConfirm(label)}
-            className="px-4 py-2 text-sm bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition"
+            onClick={() => {
+              const trimmed = label.trim();
+              if (trimmed.length > 0) {
+                onConfirm(trimmed);
+              }
+            }}
+            disabled={label.trim().length === 0}
+            className={`px-4 py-2 text-sm rounded-lg transition ${
+              label.trim().length === 0
+                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                : 'bg-primary-500 text-white hover:bg-primary-600'
+            }`}
           >
             确认标记
           </button>
