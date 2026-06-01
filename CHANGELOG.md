@@ -14,10 +14,10 @@
 - ⚡ **SettingsPanel性能** - 添加shallow selector避免频繁重渲染
 
 ### Security
-- 发现403个unwrap()需逐步清理
-- 发现符号链接攻击风险（需添加symlink_metadata检查）
-- 发现TOCTOU竞态（需使用文件句柄而非路径）
-- 发现zip 0.6.6有已知CVE（需升级到2.x）
+- 🔒 **符号链接攻击防护** - store_file添加symlink_metadata检查，拒绝符号链接文件
+- 🛡️ **chunk_size上限** - update_config添加MAX_CHUNK_SIZE (256MB) 上限校验，防止OOM
+- 🛡️ **日志行数限制** - read_log_file参数上限10000行，防止内存耗尽
+- ⚡ **useFocusTrap hook** - 提取共享焦点陷阱hook，消除5个对话框组件的重复代码 (-62行净减少)
 
 ## [0.1.1] - 2026-06-01
 
