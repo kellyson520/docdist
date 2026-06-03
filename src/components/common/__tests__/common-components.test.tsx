@@ -9,10 +9,11 @@ import { SearchBar } from '../SearchBar'
 import { TagBadge } from '../TagBadge'
 import { ConfirmDialog } from '../ConfirmDialog'
 import { ThemeToggle } from '../ThemeToggle'
+import type { Toast } from '../../../stores/toastStore'
 
 // ─── Mock stores ───────────────────────────────────────────────
 const mockRemoveToast = vi.fn()
-let mockToasts: any[] = []
+let mockToasts: Toast[] = []
 
 vi.mock('../../../stores/toastStore', () => ({
   useToastStore: vi.fn(() => ({

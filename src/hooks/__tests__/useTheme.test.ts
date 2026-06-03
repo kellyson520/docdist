@@ -297,7 +297,7 @@ describe('useTheme', () => {
 
   it('system 模式下 matchMedia 变化时 data-theme 跟随更新', () => {
     matchMediaMatches = false
-    const { result } = renderHook(() => useTheme())
+    renderHook(() => useTheme())
     expect(document.documentElement.getAttribute('data-theme')).toBe('light')
 
     act(() => {

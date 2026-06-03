@@ -83,7 +83,7 @@ const mockArchive2: Archive = {
   created_at: '2025-01-02T00:00:00Z',
 }
 
-const mockArchiveNoNote: Archive = {
+const _mockArchiveNoNote: Archive = {
   id: 'archive-3',
   file_path: '/home/user/code/main.ts',
   file_name: 'main.ts',
@@ -181,8 +181,8 @@ describe('ArchiveCard', () => {
       <ArchiveCard {...defaultCardProps} onRestore={onRestore} />
     )
 
-    // 恢复按钮有 title="恢复"
-    const restoreBtn = container.querySelector('button[title="恢复"]')!
+    // 恢复按钮有 title="恢复此版本"
+    const restoreBtn = container.querySelector('button[title="恢复此版本"]')!
     fireEvent.click(restoreBtn)
 
     expect(onRestore).toHaveBeenCalledTimes(1)
@@ -195,8 +195,6 @@ describe('ArchiveCard', () => {
       <ArchiveCard {...defaultCardProps} onDelete={onDelete} />
     )
 
-    // 先点击更多按钮（MoreVertical）打开菜单
-    const moreBtn = container.querySelector('button:not([title])')!
     // 找到 MoreVertical 按钮 — 它是 actions 区域最后一个没有 title 的按钮
     const actionButtons = container.querySelectorAll('[class*="opacity"] button')
     const moreButton = actionButtons[actionButtons.length - 1]

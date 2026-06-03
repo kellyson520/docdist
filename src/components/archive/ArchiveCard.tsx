@@ -2,10 +2,9 @@ import { useState, useEffect, useRef, memo } from 'react';
 import type { Archive } from '../../types';
 import { formatFileSize } from '../../utils/format';
 import { formatSmartTime } from '../../utils/time';
-import { TagBadge } from '../common/TagBadge';
 import {
   RotateCcw, Trash2, GitCompare, FileText, MoreVertical, Edit2,
-  Clock, HardDrive, Hash, CheckSquare, Square,
+  Clock, HardDrive, Hash, CheckSquare, Square, ChevronDown, ChevronUp, Tag,
 } from 'lucide-react';
 import { EditArchiveDialog } from './EditArchiveDialog';
 import { useArchiveStore } from '../../stores/archiveStore';
@@ -19,8 +18,11 @@ interface ArchiveCardProps {
   onDelete: () => void;
   onCompare: () => void;
   onToggleSelect?: () => void;
+  versionIndex?: number;
+  totalVersions?: number;
 }
 
+/** 文件类型图标颜色映射（模块级常量） */
 const FILE_COLOR_MAP: Record<string, string> = {
   rs: 'text-orange-500 bg-orange-50 dark:bg-orange-900/20',
   ts: 'text-blue-500 bg-blue-50 dark:bg-blue-900/20',
@@ -34,7 +36,41 @@ const FILE_COLOR_MAP: Record<string, string> = {
   css: 'text-purple-500 bg-purple-50 dark:bg-purple-900/20',
   go: 'text-teal-500 bg-teal-50 dark:bg-teal-900/20',
   txt: 'text-gray-400 bg-gray-50 dark:bg-gray-700',
+  yaml: 'text-pink-500 bg-pink-50 dark:bg-pink-900/20',
+  yml: 'text-pink-500 bg-pink-50 dark:bg-pink-900/20',
+  toml: 'text-violet-500 bg-violet-50 dark:bg-violet-900/20',
+  sh: 'text-emerald-500 bg-emerald-50 dark:bg-emerald-900/20',
+  sql: 'text-indigo-500 bg-indigo-50 dark:bg-indigo-900/20',
+  csv: 'text-lime-500 bg-lime-50 dark:bg-lime-900/20',
+  vue: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20',
+  svelte: 'text-orange-600 bg-orange-50 dark:bg-orange-900/20',
 };
+
+/** 标签颜色映射（基于标签名哈希） */
+const TAG_COLORS = [
+  'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+  'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+  'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
+  'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+  'bg-pink-100 text-pink-700 dark:bg-pink-900/30 dark:text-pink-400',
+  'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400',
+  'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+  'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400',
+];
+
+function getTagColor(tag: string): string {
+  let hash = 0;
+  for (let i = 0; i < tag.length; i++) {
+    hash = ((hash << 5) - hash) + tag.charCodeAt(i);
+    hash |= 0;
+  }
+  return TAG_COLORS[Math.abs(hash) % TAG_COLORS.length];
+}
+
+function getFileColor(name: string): string {
+  const ext = name.split('.').pop()?.toLowerCase() || '';
+  return FILE_COLOR_MAP[ext] || 'text-gray-400 bg-gray-50 dark:bg-gray-700';
+}
 
 function ArchiveCardInner({
   archive,
@@ -45,9 +81,12 @@ function ArchiveCardInner({
   onDelete,
   onCompare,
   onToggleSelect,
+  versionIndex,
+  totalVersions,
 }: ArchiveCardProps) {
   const [showMenu, setShowMenu] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
+  const [noteExpanded, setNoteExpanded] = useState(false);
   const updateArchive = useArchiveStore((s) => s.updateArchive);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -63,13 +102,11 @@ function ArchiveCardInner({
     return () => document.removeEventListener('mousedown', handleMouseDown);
   }, [showMenu]);
 
-  // 文件类型图标颜色（模块级常量，避免每次渲染重建）
-  const getFileColor = (name: string) => {
-    const ext = name.split('.').pop()?.toLowerCase() || '';
-    return FILE_COLOR_MAP[ext] || 'text-gray-400 bg-gray-50 dark:bg-gray-700';
-  };
-
   const fileColor = getFileColor(archive.file_name);
+  const hasLongNote = archive.note && archive.note.length > 80;
+  const versionLabel = versionIndex != null && totalVersions != null
+    ? `#${totalVersions - versionIndex}`
+    : null;
 
   return (
     <div
@@ -111,9 +148,21 @@ function ArchiveCardInner({
 
           {/* Info */}
           <div className="flex-1 min-w-0">
-            <h3 className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">
-              {archive.file_name}
-            </h3>
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">
+                {archive.file_name}
+              </h3>
+              {versionLabel && (
+                <span className="flex-shrink-0 px-1.5 py-0.5 text-[10px] font-medium bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 rounded">
+                  {versionLabel}
+                </span>
+              )}
+              {archive.parent_id && (
+                <span className="flex-shrink-0 px-1.5 py-0.5 text-[10px] font-medium bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400 rounded">
+                  迭代
+                </span>
+              )}
+            </div>
             <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5 truncate" title={archive.file_path}>
               {archive.file_path}
             </p>
@@ -125,7 +174,7 @@ function ArchiveCardInner({
               onClick={(e) => { e.stopPropagation(); setShowEditDialog(true); }}
               aria-label="编辑"
               className="p-1.5 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-lg transition"
-              title="编辑"
+              title="编辑备注和标签"
             >
               <Edit2 className="w-3.5 h-3.5 text-amber-500" />
             </button>
@@ -133,7 +182,7 @@ function ArchiveCardInner({
               onClick={(e) => { e.stopPropagation(); onRestore(); }}
               aria-label="恢复"
               className="p-1.5 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-lg transition"
-              title="恢复"
+              title="恢复此版本"
             >
               <RotateCcw className="w-3.5 h-3.5 text-green-500" />
             </button>
@@ -141,7 +190,7 @@ function ArchiveCardInner({
               onClick={(e) => { e.stopPropagation(); onCompare(); }}
               aria-label="对比"
               className="p-1.5 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition"
-              title="对比"
+              title="选择对比"
             >
               <GitCompare className="w-3.5 h-3.5 text-blue-500" />
             </button>
@@ -173,23 +222,43 @@ function ArchiveCardInner({
 
         {/* Note */}
         {archive.note && (
-          <p className="text-xs text-gray-500 dark:text-gray-400 mt-2 ml-13 line-clamp-2">
-            {archive.note}
-          </p>
+          <div className="mt-2 ml-13">
+            <p className={`text-xs text-gray-500 dark:text-gray-400 ${!noteExpanded && hasLongNote ? 'line-clamp-2' : ''}`}>
+              {archive.note}
+            </p>
+            {hasLongNote && (
+              <button
+                onClick={(e) => { e.stopPropagation(); setNoteExpanded(!noteExpanded); }}
+                className="flex items-center gap-0.5 mt-1 text-[11px] text-primary-500 hover:text-primary-600 dark:text-primary-400 transition"
+              >
+                {noteExpanded ? (
+                  <><ChevronUp className="w-3 h-3" /> 收起</>
+                ) : (
+                  <><ChevronDown className="w-3 h-3" /> 展开</>
+                )}
+              </button>
+            )}
+          </div>
         )}
 
         {/* Tags */}
         {archive.tags?.length > 0 && (
           <div className="flex flex-wrap gap-1 mt-2 ml-13">
             {archive.tags?.map((tag) => (
-              <TagBadge key={tag} tag={tag} />
+              <span
+                key={tag}
+                className={`inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium rounded-full ${getTagColor(tag)}`}
+              >
+                <Tag className="w-2.5 h-2.5" />
+                {tag}
+              </span>
             ))}
           </div>
         )}
 
         {/* Meta info */}
-        <div className="flex items-center gap-4 mt-3 ml-13 text-[11px] text-gray-400 dark:text-gray-500">
-          <span className="flex items-center gap-1">
+        <div className="flex items-center gap-3 mt-3 ml-13 text-[11px] text-gray-400 dark:text-gray-500">
+          <span className="flex items-center gap-1" title={archive.created_at}>
             <Clock className="w-3 h-3" />
             {formatSmartTime(archive.created_at)}
           </span>
@@ -201,12 +270,6 @@ function ArchiveCardInner({
             <Hash className="w-3 h-3" />
             {archive.chunk_count} 块
           </span>
-          {archive.parent_id && (
-            <span className="flex items-center gap-1 text-primary-400 dark:text-primary-500">
-              <GitCompare className="w-3 h-3" />
-              迭代版本
-            </span>
-          )}
         </div>
       </div>
 
@@ -238,6 +301,7 @@ export const ArchiveCard = memo(ArchiveCardInner, (prev, next) => {
   return (
     prev.archive === next.archive &&
     prev.isSelected === next.isSelected &&
-    prev.isMultiSelected === next.isMultiSelected
+    prev.isMultiSelected === next.isMultiSelected &&
+    prev.versionIndex === next.versionIndex
   );
 });

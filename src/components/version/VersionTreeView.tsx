@@ -5,7 +5,6 @@ import { formatFileSize } from '../../utils/format';
 import { formatSmartTime } from '../../utils/time';
 import { TagBadge } from '../common/TagBadge';
 import {
-  Clock,
   RotateCcw,
   Trash2,
   FileText,
@@ -16,8 +15,6 @@ import {
 } from 'lucide-react';
 import { ConfirmDialog } from '../common/ConfirmDialog';
 import { StarDialog } from './StarDialog';
-import type { Archive } from '../../types';
-
 type SortOrder = 'newest' | 'oldest';
 
 export function VersionTreeView() {

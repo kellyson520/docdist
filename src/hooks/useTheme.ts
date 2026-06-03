@@ -33,7 +33,6 @@ export function useTheme() {
         invoke('update_config', { newConfig: { ...config, theme: stored } }).catch(() => {});
       }
     }).catch(() => { /* 静默失败 */ });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Resolve system theme

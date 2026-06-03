@@ -8,7 +8,7 @@ import { vi } from 'vitest'
 export const mockInvoke = vi.fn()
 
 /** Mock listen 函数，返回一个 resolved 的 unlisten 函数 */
-export const mockListen = vi.fn().mockImplementation((_event: string, _handler: (event: any) => void) => {
+export const mockListen = vi.fn().mockImplementation((_event: string, _handler: (...args: unknown[]) => void) => {
   const unlistenFn = vi.fn()
   return Promise.resolve(unlistenFn)
 })
@@ -17,10 +17,10 @@ export const mockListen = vi.fn().mockImplementation((_event: string, _handler: 
 export const mockEmit = vi.fn()
 
 vi.mock('@tauri-apps/api/tauri', () => ({
-  invoke: (...args: any[]) => mockInvoke(...args),
+  invoke: (...args: unknown[]) => mockInvoke(...args),
 }))
 
 vi.mock('@tauri-apps/api/event', () => ({
-  listen: (...args: any[]) => mockListen(...args),
-  emit: (...args: any[]) => mockEmit(...args),
+  listen: (...args: unknown[]) => mockListen(...args),
+  emit: (...args: unknown[]) => mockEmit(...args),
 }))

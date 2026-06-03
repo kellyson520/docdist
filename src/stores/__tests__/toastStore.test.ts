@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { useToastStore, toast } from '../toastStore'
+import { useToastStore, toast, type Toast } from '../toastStore'
 
 describe('useToastStore', () => {
   beforeEach(() => {
@@ -22,7 +22,7 @@ describe('useToastStore', () => {
   })
 
   it('addToast 自动设置默认 duration=3000', () => {
-    useToastStore.getState().addToast({ type: 'info', title: 'default duration' } as any)
+    useToastStore.getState().addToast({ type: 'info', title: 'default duration' } as Omit<Toast, 'id'>)
     const { toasts } = useToastStore.getState()
     expect(toasts[0].duration).toBe(3000)
   })
