@@ -10,17 +10,14 @@
 
 ## 📋 Phase 1: 代码质量与 ESLint 修复 (优先级: HIGH)
 
-### Task 1.1: 修复 ESLint 警告
-**问题**: 有 27 个 ESLint 警告需要修复
-
-**Files:**
-- Modify: `src/App.tsx`
-- Modify: `src/components/archive/ArchiveList.tsx`
+### Task 1.1: 修复 ESLint 警告 ✅ **已完成 (2026-06-03)**
+**问题**: 已修复全部16个ESLint警告，达到0 errors, 0 warnings
 
 **修复内容:**
-1. 移除未使用的 imports (`Settings`, `Maximize2`, `setView`)
-2. 修复 React Hook useEffect 缺失依赖
-3. 修复 `any` 类型使用
+1. 移除未使用的 imports (`Clock`, `Archive`, `vi`)
+2. 修复 `any` 类型使用 (`Toast[]`, `unknown[]`)
+3. 配置 `argsIgnorePattern: '^_'` 避免 _ 前缀误报
+4. 移除无效 eslint-disable 指令
 
 ### Task 1.2: TypeScript 严格模式
 **目标**: 启用 strict mode，修复所有类型问题
@@ -33,19 +30,16 @@
 
 ## 📋 Phase 2: 前端功能完善 (优先级: HIGH)
 
-### Task 2.1: 完善 ArchiveCard 组件
-**当前状态**: 基础卡片，缺少详细信息展示
+### Task 2.1: 完善 ArchiveCard 组件 ✅ **已完成 (2026-06-03)**
+**当前状态**: 已增强，支持彩色标签、备注展开、版本序号
 
-**增强内容:**
-- 文件大小格式化显示
-- 标签彩色显示
-- 创建时间相对显示 (刚刚/5分钟前/1小时前)
-- 操作按钮优化 (恢复/对比/删除)
-- 选中状态高亮
-
-**Files:**
-- Modify: `src/components/archive/ArchiveCard.tsx`
-- Create: `src/utils/time.ts` (时间格式化工具)
+**已完成内容:**
+- 标签彩色显示（8种颜色基于标签名哈希）
+- 扩展文件类型颜色映射(+yaml/toml/sh/sql/csv/vue/svelte)
+- 版本序号和迭代标记显示
+- 备注展开/折叠功能
+- 操作按钮tooltip增强
+- 更紧凑的meta信息布局
 
 ### Task 2.2: 完善 DiffViewer 组件 ✅ **已完成 (2026-06-01)**
 **当前状态**: 已实现虚拟化渲染，支持大diff
@@ -63,17 +57,18 @@
 - Modify: `src/components/diff/DiffDetailView.tsx`
 - Add dependency: `@tanstack/react-virtual`
 
-### Task 2.3: 完善 TimelineView 组件
-**当前状态**: 基础时间轴
+### Task 2.3: 完善 TimelineView 组件 ✅ **已完成 (2026-06-03)**
+**当前状态**: 已增强，支持搜索、版本间隔、视觉优化
 
-**增强内容:**
-- 可视化时间轴设计
-- 版本节点交互
-- 快速对比功能
-- 筛选和排序
-
-**Files:**
-- Modify: `src/components/timeline/TimelineView.tsx`
+**已完成内容:**
+- 搜索栏（搜索版本备注和标签）
+- 版本间隔时间指示器
+- 版本序号标签
+- 渐变竖线视觉效果
+- 最新版本脉冲动画
+- 对比模式状态提示条
+- 标签彩色显示
+- 备注展开/折叠
 
 ### Task 2.4: 完善 IterationGraph 组件
 **当前状态**: 基础图谱
@@ -310,7 +305,7 @@
 
 ## 📊 成功指标
 
-- [x] ESLint 警告: 0 (CI检查通过)
+- [x] ESLint 警告: 0 (2026-06-03 清零)
 - [x] TypeScript 错误: 0 (CI检查通过)
 - [x] 测试覆盖率: > 80% (前端145测试, Rust 200+测试)
 - [ ] 构建时间: < 5 分钟

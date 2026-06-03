@@ -4,6 +4,24 @@
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-06-03
+
+### Fixed
+- 🔧 **ESLint清零** - 修复全部16个ESLint警告（0 errors, 0 warnings）
+  - 移除未使用imports (Clock, Archive, vi)
+  - 修复any类型为具体类型 (Toast[], unknown[])
+  - 配置argsIgnorePattern避免_前缀误报
+  - 移除无效eslint-disable指令
+
+### Added
+- 🎨 **ArchiveCard增强** - 标签彩色显示（8种颜色）、备注展开/折叠、版本序号标记、扩展文件类型颜色(+yaml/toml/sh/sql等)
+- 📊 **TimelineView增强** - 搜索栏、版本间隔时间指示器、版本序号标签、渐变竖线、最新版本脉冲动画、对比模式状态提示条、标签彩色显示
+
+### Technical
+- 11文件修改，+334/-121行
+- 前端145测试全部通过
+- CI 8/8 全绿（快速检查、Rust检查、前端测试、安全扫描、Rust测试、3平台构建）
+
 ## [0.1.2] - 2026-06-01
 
 ### Fixed
