@@ -17,6 +17,7 @@ import { LogViewer } from './components/common/LogViewer';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { formatFileSize } from './utils/format';
 import { FolderOpen, Clock, GitCompare, GitBranch, Minimize2, Settings, Terminal } from 'lucide-react';
+import docdistIcon from './assets/docdist-icon.svg';
 import './styles/themes.css';
 import './styles/animations.css';
 
@@ -140,9 +141,7 @@ export default function App() {
           <div className="border-b border-gray-100 p-3 dark:border-gray-700 md:p-4">
             <div className="flex items-center justify-between gap-3">
               <div className="flex min-w-0 items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center shadow-sm">
-                  <span className="text-white text-sm font-bold">追</span>
-                </div>
+                <img src={docdistIcon} alt="DocDist" className="h-8 w-8 flex-shrink-0 rounded-lg shadow-sm" />
                 <div className="min-w-0">
                   <h1 className="font-bold text-sm dark:text-white">DocDist</h1>
                   <p className="text-xs text-gray-400">文件历史管理</p>

@@ -154,9 +154,22 @@ export interface ArchiveState {
 }
 
 // ==================== 竞态请求ID ====================
-// 独立计数器：避免 fetchArchives 和 fetchArchivesPaginated 互相丢弃响应
-let _fetchArchivesRequestId = 0;
-let _fetchPaginatedRequestId = 0;
+// 普通查询和分页查询共享同一个序号，避免旧响应覆盖新列表。
+let _archiveListRequestId = 0;
+
+function reconcileArchiveReferences(
+  state: ArchiveState,
+  archives: Archive[],
+): Partial<ArchiveState> {
+  const selectedArchive = state.selectedArchive
+    ? archives.find(a => a.id === state.selectedArchive?.id) ?? state.selectedArchive
+    : null;
+  const compareTarget = state.compareTarget
+    ? archives.find(a => a.id === state.compareTarget?.id) ?? state.compareTarget
+    : null;
+
+  return { selectedArchive, compareTarget };
+}
 
 // ==================== Store ====================
 
@@ -188,23 +201,27 @@ export const useArchiveStore = create<ArchiveState>((set, get) => ({
   // ==================== 存档 CRUD ====================
 
   fetchArchives: async (filePath?: string, search?: string) => {
-    const requestId = ++_fetchArchivesRequestId;
+    const requestId = ++_archiveListRequestId;
     set({ loading: true, error: null, page: 1, hasMore: false, totalCount: 0 });
     try {
       const archives = await invoke<Archive[]>('list_archives', {
         filePath: filePath || null,
         search: search || null,
       });
-      if (requestId !== _fetchArchivesRequestId) return;
-      set({ archives, loading: false });
+      if (requestId !== _archiveListRequestId) return;
+      set(state => ({
+        archives,
+        loading: false,
+        ...reconcileArchiveReferences(state, archives),
+      }));
     } catch (e: unknown) {
-      if (requestId !== _fetchArchivesRequestId) return;
+      if (requestId !== _archiveListRequestId) return;
       set({ archives: [], error: e instanceof Error ? e.message : String(e), loading: false });
     }
   },
 
   fetchArchivesPaginated: async (page = 1, filePath?: string, search?: string) => {
-    const requestId = ++_fetchPaginatedRequestId;
+    const requestId = ++_archiveListRequestId;
     const { pageSize } = get();
     set({ loading: true, error: null });
     try {
@@ -214,16 +231,17 @@ export const useArchiveStore = create<ArchiveState>((set, get) => ({
         page,
         pageSize,
       });
-      if (requestId !== _fetchPaginatedRequestId) return;
-      set({
+      if (requestId !== _archiveListRequestId) return;
+      set(state => ({
         archives,
         page,
         totalCount: total,
         hasMore: page * pageSize < total,
         loading: false,
-      });
+        ...reconcileArchiveReferences(state, archives),
+      }));
     } catch (e: unknown) {
-      if (requestId !== _fetchPaginatedRequestId) return;
+      if (requestId !== _archiveListRequestId) return;
       set({ archives: [], error: e instanceof Error ? e.message : String(e), loading: false });
     }
   },
@@ -330,6 +348,7 @@ export const useArchiveStore = create<ArchiveState>((set, get) => ({
       toast.success('更新成功', '存档信息已更新');
       const { fetchArchives, searchQuery } = get();
       await fetchArchives(undefined, searchQuery || undefined);
+      set(s => ({ treeRevision: s.treeRevision + 1 }));
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       log.error('更新存档失败', msg);
@@ -619,6 +638,15 @@ export const useArchiveStore = create<ArchiveState>((set, get) => ({
       const { fileEvents } = get();
       const newEvents = [event.payload, ...fileEvents].slice(0, 100); // 保留最近100条
       set({ fileEvents: newEvents });
+
+      if (event.payload.event_type === 'auto_archive_triggered') {
+        void (async () => {
+          const { fetchArchives, searchQuery } = get();
+          await fetchArchives(undefined, searchQuery || undefined);
+          await get().fetchStatistics();
+          set(s => ({ treeRevision: s.treeRevision + 1 }));
+        })();
+      }
     });
 
     // 监听 watcher 状态变化

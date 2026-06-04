@@ -1,6 +1,22 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { mockInvoke, mockListen } from '../../test/tauri-mocks';
 import { useArchiveStore } from '../archiveStore';
+import type { Archive } from '../../types';
+
+function makeArchive(id: string, note = ''): Archive {
+  return {
+    id,
+    file_path: `/tmp/${id}.txt`,
+    file_name: `${id}.txt`,
+    file_size: 100,
+    checksum: `checksum-${id}`,
+    chunk_count: 1,
+    note,
+    tags: [],
+    parent_id: null,
+    created_at: '2026-01-01 00:00:00.000',
+  };
+}
 
 describe('archiveStore 版本管理 actions', () => {
   beforeEach(() => {
@@ -187,6 +203,42 @@ describe('archiveStore 版本管理 actions', () => {
       await useArchiveStore.getState().setWatcherExcludePatterns(['*.tmp']);
 
       expect(useArchiveStore.getState().error).toBe('Update failed');
+    });
+  });
+
+  describe('archive refresh', () => {
+    it('ignores stale archive list responses', async () => {
+      let resolveOld!: (value: Archive[]) => void;
+      let resolveNew!: (value: Archive[]) => void;
+      const oldRequest = new Promise<Archive[]>(resolve => { resolveOld = resolve; });
+      const newRequest = new Promise<Archive[]>(resolve => { resolveNew = resolve; });
+      const oldArchive = makeArchive('old');
+      const newArchive = makeArchive('new');
+
+      mockInvoke.mockReturnValueOnce(oldRequest);
+      mockInvoke.mockReturnValueOnce(newRequest);
+
+      const oldFetch = useArchiveStore.getState().fetchArchives(undefined, 'old');
+      const newFetch = useArchiveStore.getState().fetchArchives(undefined, 'new');
+
+      resolveNew([newArchive]);
+      await newFetch;
+      expect(useArchiveStore.getState().archives).toEqual([newArchive]);
+
+      resolveOld([oldArchive]);
+      await oldFetch;
+      expect(useArchiveStore.getState().archives).toEqual([newArchive]);
+    });
+
+    it('updates selected archive reference after refresh', async () => {
+      const staleArchive = makeArchive('selected', '旧备注');
+      const freshArchive = makeArchive('selected', '新备注');
+      useArchiveStore.setState({ selectedArchive: staleArchive });
+      mockInvoke.mockResolvedValueOnce([freshArchive]);
+
+      await useArchiveStore.getState().fetchArchives();
+
+      expect(useArchiveStore.getState().selectedArchive).toEqual(freshArchive);
     });
   });
 });
