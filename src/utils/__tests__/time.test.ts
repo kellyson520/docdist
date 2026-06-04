@@ -83,7 +83,8 @@ describe('formatTimeOnly', () => {
   it('formats time without date', () => {
     const date = '2024-01-15T14:30:45Z';
     const result = formatTimeOnly(date);
-    expect(result).toContain('14');
+    const expectedHour = String(new Date(date).getHours()).padStart(2, '0');
+    expect(result).toContain(expectedHour);
     expect(result).toContain('30');
     expect(result).not.toContain('2024');
   });
@@ -149,8 +150,9 @@ describe('formatSmartTime', () => {
   it('returns "昨天 HH:mm" for yesterday', () => {
     const date = '2024-01-14T14:30:00Z';
     const result = formatSmartTime(date);
+    const expectedHour = String(new Date(date).getHours()).padStart(2, '0');
     expect(result).toContain('昨天');
-    expect(result).toContain('14');
+    expect(result).toContain(expectedHour);
   });
 
   it('returns weekday for this week', () => {

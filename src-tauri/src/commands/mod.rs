@@ -6,8 +6,127 @@ use crate::error::AppError;
 use crate::storage;
 use crate::types::{ExportResult, RestoreDirectoryResult, StarredArchive};
 use crate::AppState;
+use std::path::{Path, PathBuf};
 use tauri::Manager;
 use tauri::State;
+
+const MAX_EXCLUDE_PATTERNS: usize = 128;
+const MAX_PATTERN_LEN: usize = 256;
+const MAX_WATCH_DIRS: usize = 128;
+const MAX_CHUNK_SIZE: usize = 256 * 1024 * 1024; // 256MB
+const MAX_WATCHER_DELAY_SECS: u64 = 3600;
+const MAX_LOG_FILE_SIZE_MB: u64 = 1024;
+const MAX_LOG_RETENTION_DAYS: u32 = 3650;
+
+fn validate_exclude_patterns(patterns: &[String]) -> Result<(), AppError> {
+    if patterns.len() > MAX_EXCLUDE_PATTERNS {
+        return Err(AppError::Other(format!(
+            "排除规则不能超过 {} 条",
+            MAX_EXCLUDE_PATTERNS
+        )));
+    }
+    for pattern in patterns {
+        let trimmed = pattern.trim();
+        if trimmed.is_empty() {
+            return Err(AppError::Other("排除规则不能为空".to_string()));
+        }
+        if trimmed.len() > MAX_PATTERN_LEN {
+            return Err(AppError::Other(format!(
+                "排除规则长度不能超过 {} 字符",
+                MAX_PATTERN_LEN
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn validate_config(config: &AppConfig) -> Result<(), AppError> {
+    if config.storage.chunk_size == 0 {
+        return Err(AppError::Other("chunk_size 不能为 0".to_string()));
+    }
+    if config.storage.chunk_size > MAX_CHUNK_SIZE {
+        return Err(AppError::Other(format!(
+            "chunk_size 不能超过 {}MB",
+            MAX_CHUNK_SIZE / 1024 / 1024
+        )));
+    }
+    if config.watcher.auto_archive_delay > MAX_WATCHER_DELAY_SECS {
+        return Err(AppError::Other(format!(
+            "自动存档延迟不能超过 {} 秒",
+            MAX_WATCHER_DELAY_SECS
+        )));
+    }
+    if config.watcher.max_file_size > 0
+        && config.watcher.min_file_size > config.watcher.max_file_size
+    {
+        return Err(AppError::Other(
+            "最小文件大小不能大于最大文件大小".to_string(),
+        ));
+    }
+    if config.watcher.watch_dirs.len() > MAX_WATCH_DIRS {
+        return Err(AppError::Other(format!(
+            "监控目录不能超过 {} 个",
+            MAX_WATCH_DIRS
+        )));
+    }
+    validate_exclude_patterns(&config.watcher.exclude_patterns)?;
+
+    match config.log.level.as_str() {
+        "trace" | "debug" | "info" | "warn" | "error" => {}
+        _ => {
+            return Err(AppError::Other(
+                "日志级别必须是 trace/debug/info/warn/error".to_string(),
+            ));
+        }
+    }
+    if config.log.max_file_size_mb == 0
+        || config.log.max_file_size_mb > MAX_LOG_FILE_SIZE_MB
+    {
+        return Err(AppError::Other(format!(
+            "日志文件大小必须在 1..={}MB",
+            MAX_LOG_FILE_SIZE_MB
+        )));
+    }
+    if config.log.retention_days > MAX_LOG_RETENTION_DAYS {
+        return Err(AppError::Other(format!(
+            "日志保留天数不能超过 {} 天",
+            MAX_LOG_RETENTION_DAYS
+        )));
+    }
+    Ok(())
+}
+
+fn chunk_path_for_hash(
+    chunks_dir: &Path,
+    hash: &str,
+) -> Result<PathBuf, AppError> {
+    if hash.len() < 2 || !hash.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err(AppError::Other(format!("无效的 chunk hash: {}", hash)));
+    }
+    Ok(chunks_dir.join(&hash[..2]).join(hash))
+}
+
+fn safe_archive_entry_name(archive_id: &str, index: usize) -> String {
+    let sanitized: String = archive_id
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || matches!(c, '-' | '_') {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let trimmed = sanitized.trim_matches('_');
+    let fallback = "archive";
+    let stem = if trimmed.is_empty() {
+        fallback
+    } else {
+        trimmed
+    };
+    let limited: String = stem.chars().take(128).collect();
+    format!("archives/{:06}_{}.bin", index + 1, limited)
+}
 
 // ==================== 存档管理 ====================
 
@@ -147,9 +266,6 @@ pub async fn start_watcher(
     app_handle: tauri::AppHandle,
     paths: Vec<String>,
 ) -> Result<(), AppError> {
-    let mut watcher = state.watcher.lock().unwrap_or_else(|e| e.into_inner());
-
-    // 从配置读取防抖延迟（先提取值，再锁 watcher，避免 ABBA 死锁）
     let (debounce_secs, min_file_size, max_file_size) = {
         let config = state.config.lock().unwrap_or_else(|e| e.into_inner());
         (
@@ -158,6 +274,8 @@ pub async fn start_watcher(
             config.watcher.max_file_size,
         )
     };
+
+    let mut watcher = state.watcher.lock().unwrap_or_else(|e| e.into_inner());
     watcher
         .set_debounce_duration(std::time::Duration::from_secs(debounce_secs));
     watcher.set_file_size_range(min_file_size, max_file_size);
@@ -218,6 +336,8 @@ pub async fn set_watcher_exclude_patterns(
     state: State<'_, AppState>,
     patterns: Vec<String>,
 ) -> Result<(), AppError> {
+    validate_exclude_patterns(&patterns)?;
+
     // 先更新 watcher（锁 watcher）
     {
         let watcher = state.watcher.lock().unwrap_or_else(|e| e.into_inner());
@@ -303,29 +423,20 @@ pub async fn update_config(
     state: State<'_, AppState>,
     new_config: AppConfig,
 ) -> Result<(), AppError> {
-    // 配置验证：关键字段不能为零
-    const MAX_CHUNK_SIZE: usize = 256 * 1024 * 1024; // 256MB
-    if new_config.storage.chunk_size == 0 {
-        return Err(AppError::Other("chunk_size 不能为 0".to_string()));
-    }
-    if new_config.storage.chunk_size > MAX_CHUNK_SIZE {
-        return Err(AppError::Other(format!(
-            "chunk_size 不能超过 {}MB",
-            MAX_CHUNK_SIZE / 1024 / 1024
-        )));
-    }
+    validate_config(&new_config)?;
 
     // 先保存到磁盘，失败则不更新内存状态，保证一致性
     new_config.save(&state.data_dir)?;
 
-    // 提取 watcher 配置副本，然后释放 config 锁再锁 watcher，避免 ABBA 死锁
-    // （start_watcher 锁序为 watcher→config，这里必须先放 config 再锁 watcher）
-    let (exclude_patterns, debounce_secs) = {
+    // 提取 watcher 配置副本，然后释放 config 锁再锁 watcher，避免交叉持锁
+    let (exclude_patterns, debounce_secs, min_file_size, max_file_size) = {
         let mut config = state.config.lock().unwrap_or_else(|e| e.into_inner());
         *config = new_config;
         (
             config.watcher.exclude_patterns.clone(),
             config.watcher.auto_archive_delay,
+            config.watcher.min_file_size,
+            config.watcher.max_file_size,
         )
     };
     // config 锁已释放，安全获取 watcher 锁
@@ -333,6 +444,7 @@ pub async fn update_config(
     watcher.set_exclude_patterns(exclude_patterns);
     watcher
         .set_debounce_duration(std::time::Duration::from_secs(debounce_secs));
+    watcher.set_file_size_range(min_file_size, max_file_size);
 
     Ok(())
 }
@@ -537,24 +649,19 @@ pub async fn export_history(
 
     // 写入各存档的 chunk 文件
     let chunks_dir = state.service.chunks_dir();
-    for archive in &archives {
+    for (index, archive) in archives.iter().enumerate() {
         let chunk_hashes =
             db::get_archive_chunk_hashes(state.service.db(), &archive.id)?;
-        let mut data = Vec::new();
-        for hash in &chunk_hashes {
-            // 使用两级目录结构（与其他存储代码一致）
-            let chunk_path = if hash.len() >= 2 {
-                chunks_dir.join(&hash[..2]).join(hash)
-            } else {
-                chunks_dir.join(hash)
-            };
-            if chunk_path.exists() {
-                data.extend_from_slice(&std::fs::read(&chunk_path)?);
-            }
-        }
-        let filename = format!("{}.bin", archive.id);
+        let filename = safe_archive_entry_name(&archive.id, index);
         zip.start_file(&filename, options)?;
-        zip.write_all(&data)?;
+        for hash in &chunk_hashes {
+            let chunk_path = chunk_path_for_hash(chunks_dir, hash)?;
+            if !chunk_path.exists() {
+                return Err(AppError::Other(format!("分块不存在: {}", hash)));
+            }
+            let mut chunk_file = std::fs::File::open(&chunk_path)?;
+            std::io::copy(&mut chunk_file, &mut zip)?;
+        }
     }
 
     zip.finish()?;
@@ -565,4 +672,27 @@ pub async fn export_history(
         archive_count: archives.len(),
         total_size: file_size,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_safe_archive_entry_name_prevents_zip_slip() {
+        let name = safe_archive_entry_name("../../evil/path", 0);
+        assert_eq!(name, "archives/000001_evil_path.bin");
+    }
+
+    #[test]
+    fn test_safe_archive_entry_name_has_fallback() {
+        let name = safe_archive_entry_name("../../", 1);
+        assert_eq!(name, "archives/000002_archive.bin");
+    }
+
+    #[test]
+    fn test_chunk_path_for_hash_rejects_invalid_hash() {
+        let result = chunk_path_for_hash(Path::new("/tmp/chunks"), "../bad");
+        assert!(result.is_err());
+    }
 }

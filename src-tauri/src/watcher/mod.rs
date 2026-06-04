@@ -1,6 +1,6 @@
 use notify::{Event, EventKind, RecursiveMode, Watcher};
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -270,21 +270,22 @@ impl FileWatcher {
         )
         .map_err(|e| crate::error::AppError::Other(e.to_string()))?;
 
+        let mut canonical_paths = Vec::with_capacity(paths.len());
         for path in &paths {
-            let p = PathBuf::from(path);
-            if p.exists() {
-                let mode = if p.is_dir() {
-                    RecursiveMode::Recursive
-                } else {
-                    RecursiveMode::NonRecursive
-                };
-                watcher.watch(&p, mode).map_err(|e| {
-                    crate::error::AppError::Other(e.to_string())
-                })?;
-            }
+            let canonical = validate_watch_path(path)?;
+            let p = PathBuf::from(&canonical);
+            let mode = if p.is_dir() {
+                RecursiveMode::Recursive
+            } else {
+                RecursiveMode::NonRecursive
+            };
+            watcher
+                .watch(&p, mode)
+                .map_err(|e| crate::error::AppError::Other(e.to_string()))?;
+            canonical_paths.push(canonical);
         }
 
-        *watched.lock().unwrap_or_else(|e| e.into_inner()) = paths;
+        *watched.lock().unwrap_or_else(|e| e.into_inner()) = canonical_paths;
         self.watcher = Some(watcher);
 
         // 启动防抖处理线程 — 使用全新的 AtomicBool，避免旧线程因信号重置而复活
@@ -444,17 +445,12 @@ impl FileWatcher {
         &mut self,
         path: String,
     ) -> Result<(), crate::error::AppError> {
-        let p = PathBuf::from(&path);
-        if !p.exists() {
-            return Err(crate::error::AppError::Other(format!(
-                "路径不存在: {}",
-                path
-            )));
-        }
+        let canonical = validate_watch_path(&path)?;
+        let p = PathBuf::from(&canonical);
 
         let mut watched =
             self.watched_paths.lock().unwrap_or_else(|e| e.into_inner());
-        if watched.contains(&path) {
+        if watched.contains(&canonical) {
             return Ok(());
         }
 
@@ -469,7 +465,7 @@ impl FileWatcher {
                 .map_err(|e| crate::error::AppError::Other(e.to_string()))?;
         }
 
-        watched.push(path);
+        watched.push(canonical);
         Ok(())
     }
 
@@ -480,9 +476,14 @@ impl FileWatcher {
     ) -> Result<(), crate::error::AppError> {
         let mut watched =
             self.watched_paths.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(pos) = watched.iter().position(|p| p == path) {
+        let path_key = Path::new(path)
+            .canonicalize()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|_| path.to_string());
+
+        if let Some(pos) = watched.iter().position(|p| p == &path_key) {
             if let Some(ref mut watcher) = self.watcher {
-                let _ = watcher.unwatch(std::path::Path::new(path));
+                let _ = watcher.unwatch(std::path::Path::new(&path_key));
             }
             watched.remove(pos);
         }
@@ -490,7 +491,7 @@ impl FileWatcher {
         self.pending_changes
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .remove(path);
+            .remove(&path_key);
         Ok(())
     }
 }
@@ -530,6 +531,58 @@ fn is_path_excluded(path_str: &str, patterns: &[String]) -> bool {
     false
 }
 
+fn validate_watch_path(path: &str) -> Result<String, crate::error::AppError> {
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        return Err(crate::error::AppError::Other(
+            "监控路径不能为空".to_string(),
+        ));
+    }
+
+    let canonical = Path::new(trimmed).canonicalize().map_err(|_| {
+        crate::error::AppError::Other(format!("路径不存在: {}", path))
+    })?;
+
+    let path_str = canonical.to_string_lossy().to_string();
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let forbidden =
+            ["/", "/etc", "/sys", "/proc", "/dev", "/root", "/boot"];
+        for prefix in &forbidden {
+            if path_str == *prefix
+                || path_str.starts_with(&format!("{}/", prefix))
+            {
+                return Err(crate::error::AppError::Other(format!(
+                    "不允许监控系统目录: {}",
+                    prefix
+                )));
+            }
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let path_lower = path_str.to_lowercase();
+        let forbidden_windows = [
+            "c:\\windows",
+            "c:\\program files",
+            "c:\\program files (x86)",
+            "c:\\programdata",
+        ];
+        for prefix in &forbidden_windows {
+            if path_lower.starts_with(prefix) {
+                return Err(crate::error::AppError::Other(format!(
+                    "不允许监控系统目录: {}",
+                    prefix
+                )));
+            }
+        }
+    }
+
+    Ok(path_str)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -556,6 +609,25 @@ mod tests {
         let patterns = vec!["*.TMP".to_string(), ".GIT".to_string()];
         assert!(is_path_excluded("/foo/bar.tmp", &patterns));
         assert!(is_path_excluded("/foo/.git/config", &patterns));
+    }
+
+    #[test]
+    fn test_validate_watch_path_rejects_empty_path() {
+        let result = validate_watch_path(" ");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_validate_watch_path_rejects_missing_path() {
+        let result = validate_watch_path("/definitely/missing/docdist/path");
+        assert!(result.is_err());
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    #[test]
+    fn test_validate_watch_path_rejects_system_directory() {
+        let result = validate_watch_path("/");
+        assert!(result.is_err());
     }
 
     #[test]
