@@ -2,7 +2,13 @@ import { useArchiveStore } from '../../stores/archiveStore';
 import { shallow } from 'zustand/shallow';
 import { X, GitCompare, Copy, Check, ChevronDown, ChevronUp } from 'lucide-react';
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { useVirtualizer } from '@tanstack/react-virtual';
+
+type DiffChangeRow = {
+  change_type: string;
+  content: string;
+  old_line?: number | null;
+  new_line?: number | null;
+};
 
 export function DiffViewer() {
   const { diffResult, clearDiff, loading } = useArchiveStore(
@@ -24,12 +30,16 @@ export function DiffViewer() {
   const handleCopy = useCallback(async () => {
     if (!diffResult) return;
     
-    const text = diffResult.hunks.flatMap(hunk => 
-      hunk.changes.map(change => {
+    const text = diffResult.hunks.flatMap(hunk => {
+      const header = `@@ -${hunk.old_start},${hunk.old_lines} +${hunk.new_start},${hunk.new_lines} @@`;
+      return [
+        header,
+        ...hunk.changes.map(change => {
         const prefix = change.change_type === 'add' ? '+' : change.change_type === 'delete' ? '-' : ' ';
-        return `${prefix} ${change.content}`;
-      })
-    ).join('\n');
+          return `${prefix}${change.content}`;
+        }),
+      ];
+    }).join('\n');
 
     try {
       await navigator.clipboard.writeText(text);
@@ -86,10 +96,10 @@ export function DiffViewer() {
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-gray-100 dark:border-gray-700">
+      <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-gray-100 dark:border-gray-700">
         <div className="flex items-center gap-2">
           <GitCompare className="w-5 h-5 text-primary-500" />
-          <h2 className="font-semibold text-lg dark:text-white">版本对比</h2>
+          <h2 className="font-semibold text-base dark:text-white">版本对比</h2>
           
           {/* Stats Toggle */}
           <button
@@ -175,36 +185,48 @@ export function DiffViewer() {
             </div>
           )}
 
-          <span className="text-xs text-gray-500 dark:text-gray-400">
+          <span className="text-xs text-gray-500 dark:text-gray-400 tabular-nums">
             {diffResult.hunks.length} 个差异块
           </span>
         </div>
       )}
 
       {/* Diff Content */}
-      <div className="flex-1 overflow-y-auto font-mono text-xs">
+      <div className="flex-1 overflow-auto font-mono text-xs bg-white dark:bg-gray-950">
+        {diffResult.hunks.length === 0 && (
+          <div className="flex h-full items-center justify-center text-gray-400 dark:text-gray-500">
+            <div className="text-center">
+              <GitCompare className="mx-auto mb-2 h-8 w-8 opacity-30" />
+              <p>两个版本没有内容差异</p>
+            </div>
+          </div>
+        )}
+
         {diffResult.hunks.map((hunk, hunkIdx) => {
           const isExpanded = !collapsedHunks.has(hunkIdx);
           
           return (
-            <div key={hunkIdx} className="border-b border-gray-100 dark:border-gray-700">
+            <div key={hunkIdx} className="border-b border-gray-200 dark:border-gray-800">
               {/* Hunk Header */}
               <button
                 onClick={() => toggleHunk(hunkIdx)}
                 aria-expanded={isExpanded}
-                className="w-full px-4 py-1.5 bg-gray-50 dark:bg-gray-800/50 text-gray-600 dark:text-gray-400 text-xs border-y border-gray-200 dark:border-gray-700 flex items-center justify-between hover:bg-gray-100 dark:hover:bg-gray-700 transition"
+                className="sticky top-0 z-10 w-full px-3 py-1.5 bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 text-xs border-y border-blue-100 dark:border-blue-900 flex items-center justify-between hover:bg-blue-100 dark:hover:bg-blue-950 transition"
               >
-                <span>
+                <span className="font-semibold">
                   @@ -{hunk.old_start},{hunk.old_lines} +{hunk.new_start},{hunk.new_lines} @@
                 </span>
-                <span className="text-gray-400 dark:text-gray-500">
+                <span className="text-blue-500 dark:text-blue-400 tabular-nums">
                   {hunk.changes.length} 行
                 </span>
               </button>
 
-              {/* Changes - 使用虚拟化渲染优化大量数据 */}
               {isExpanded && (
-                <VirtualizedChangesList changes={hunk.changes} />
+                <div>
+                  {hunk.changes.map((change, index) => (
+                    <DiffLine key={`${hunkIdx}-${index}`} change={change} />
+                  ))}
+                </div>
               )}
             </div>
           );
@@ -214,59 +236,35 @@ export function DiffViewer() {
   );
 }
 
-// 虚拟化渲染 changes 列表的子组件
-function VirtualizedChangesList({ changes }: { changes: Array<{ change_type: string; content: string; old_line?: number | null; new_line?: number | null }> }) {
-  const parentRef = useRef<HTMLDivElement>(null);
-
-  const virtualizer = useVirtualizer({
-    count: changes.length,
-    getScrollElement: () => parentRef.current,
-    estimateSize: () => 24, // 每行约24px
-    overscan: 20, // 预渲染20行
-  });
+function DiffLine({ change }: { change: DiffChangeRow }) {
+  const isAdd = change.change_type === 'add';
+  const isDelete = change.change_type === 'delete';
+  const prefix = isAdd ? '+' : isDelete ? '-' : ' ';
+  const rowClass = isAdd
+    ? 'bg-green-50 text-green-900 dark:bg-green-950/35 dark:text-green-200'
+    : isDelete
+    ? 'bg-red-50 text-red-900 dark:bg-red-950/35 dark:text-red-200'
+    : 'bg-white text-gray-800 dark:bg-gray-950 dark:text-gray-300';
+  const gutterClass = isAdd
+    ? 'bg-green-100/70 text-green-700 dark:bg-green-950/60 dark:text-green-300'
+    : isDelete
+    ? 'bg-red-100/70 text-red-700 dark:bg-red-950/60 dark:text-red-300'
+    : 'bg-gray-50 text-gray-400 dark:bg-gray-900 dark:text-gray-600';
 
   return (
-    <div ref={parentRef} className="max-h-[400px] overflow-y-auto">
-      <div
-        style={{
-          height: `${virtualizer.getTotalSize()}px`,
-          width: '100%',
-          position: 'relative',
-        }}
-      >
-        {virtualizer.getVirtualItems().map((virtualItem) => {
-          const change = changes[virtualItem.index];
-          return (
-            <div
-              key={virtualItem.index}
-              className={`absolute top-0 left-0 w-full flex px-4 py-0.5 hover:brightness-95 transition ${
-                change.change_type === 'add'
-                  ? 'bg-green-50 dark:bg-green-900/20 text-green-800 dark:text-green-300'
-                  : change.change_type === 'delete'
-                  ? 'bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-300'
-                  : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300'
-              }`}
-              style={{
-                height: `${virtualItem.size}px`,
-                transform: `translateY(${virtualItem.start}px)`,
-              }}
-            >
-              <span className="w-10 text-right pr-3 text-gray-400 dark:text-gray-600 select-none flex-shrink-0">
-                {change.old_line ?? ''}
-              </span>
-              <span className="w-10 text-right pr-3 text-gray-400 dark:text-gray-600 select-none flex-shrink-0">
-                {change.new_line ?? ''}
-              </span>
-              <span className="w-5 text-center select-none flex-shrink-0 font-bold">
-                {change.change_type === 'add' ? '+' : change.change_type === 'delete' ? '-' : ' '}
-              </span>
-              <span className="whitespace-pre overflow-x-auto flex-1">
-                {change.content}
-              </span>
-            </div>
-          );
-        })}
-      </div>
+    <div className={`grid min-w-max grid-cols-[4.5rem_4.5rem_2rem_minmax(32rem,1fr)] leading-6 hover:brightness-[0.98] ${rowClass}`}>
+      <span className={`border-r border-gray-200 px-3 text-right tabular-nums select-none dark:border-gray-800 ${gutterClass}`}>
+        {change.old_line ?? ''}
+      </span>
+      <span className={`border-r border-gray-200 px-3 text-right tabular-nums select-none dark:border-gray-800 ${gutterClass}`}>
+        {change.new_line ?? ''}
+      </span>
+      <span className="text-center font-semibold select-none">
+        {prefix}
+      </span>
+      <code className="whitespace-pre px-2 text-[12px]">
+        {change.content || ' '}
+      </code>
     </div>
   );
 }

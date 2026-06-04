@@ -1,6 +1,10 @@
 use std::path::Path;
 use xxhash_rust::xxh3::xxh3_64;
 
+const MIN_CDC_CHUNK_SIZE: usize = 1024;
+const MAX_CDC_CHUNK_MULTIPLIER: usize = 2;
+const CDC_ROLLING_WINDOW_SIZE: usize = 64;
+
 pub fn compute_hash(data: &[u8]) -> String {
     format!("{:016x}", xxh3_64(data))
 }
@@ -25,6 +29,12 @@ pub fn store_file(
 ) -> Result<(Vec<String>, Vec<usize>, u64, String), crate::error::AppError> {
     use std::io::Read;
 
+    if chunk_size == 0 {
+        return Err(crate::error::AppError::Other(
+            "chunk_size 不能为 0".to_string(),
+        ));
+    }
+
     // 防止符号链接攻击：拒绝归档符号链接文件
     let metadata = std::fs::symlink_metadata(file_path)?;
     if metadata.file_type().is_symlink() {
@@ -33,77 +43,130 @@ pub fn store_file(
         ));
     }
 
-    let mut file = std::fs::File::open(file_path)?;
-    let mut buffer = vec![0u8; chunk_size];
+    let mut file = std::io::BufReader::new(std::fs::File::open(file_path)?);
+    let mut read_buffer = [0u8; 64 * 1024];
+    let bounds = chunk_bounds(chunk_size);
+    let mut chunk = Vec::with_capacity(bounds.target);
     let mut chunk_hashes = Vec::new();
     let mut chunk_sizes = Vec::new();
     let mut file_hasher = blake3::Hasher::new();
     let mut file_size: u64 = 0;
-    let mut filled: usize = 0; // buffer 中当前有效数据量
+    let mut rolling_hash = 0u64;
+    let mut rolling_window =
+        std::collections::VecDeque::with_capacity(CDC_ROLLING_WINDOW_SIZE);
 
     loop {
-        // 从文件读取数据填充 buffer 的空余部分
-        loop {
-            let n = file.read(&mut buffer[filled..])?;
-            if n == 0 {
-                break;
-            }
-            filled += n;
-        }
-
-        // 没有数据了（EOF 且无剩余），退出外层循环
-        if filled == 0 {
+        let n = file.read(&mut read_buffer)?;
+        if n == 0 {
             break;
         }
 
-        // 处理 buffer 中完整的 chunk
-        let mut consumed = 0;
-        while consumed + chunk_size <= filled {
-            let chunk = &buffer[consumed..consumed + chunk_size];
-            file_hasher.update(chunk);
-            file_size += chunk_size as u64;
+        file_hasher.update(&read_buffer[..n]);
+        for &byte in &read_buffer[..n] {
+            file_size += 1;
+            chunk.push(byte);
+            rolling_hash =
+                update_rolling_hash(rolling_hash, byte, &mut rolling_window);
 
-            let hash = compute_hash(chunk);
-            let prefix = hash_prefix(&hash)?;
-            let chunk_dir = base_dir.join(prefix);
-            let chunk_path = chunk_dir.join(&hash);
-
-            if !chunk_path.exists() {
-                std::fs::create_dir_all(&chunk_dir)?;
-                std::fs::write(&chunk_path, chunk)?;
+            if should_cut_chunk(chunk.len(), rolling_hash, bounds) {
+                persist_chunk(
+                    base_dir,
+                    &chunk,
+                    &mut chunk_hashes,
+                    &mut chunk_sizes,
+                )?;
+                chunk.clear();
+                rolling_hash = 0;
+                rolling_window.clear();
             }
-
-            chunk_hashes.push(hash);
-            chunk_sizes.push(chunk_size);
-            consumed += chunk_size;
         }
+    }
 
-        // 处理剩余的最后一个 chunk（可能小于 chunk_size）
-        if consumed < filled {
-            let chunk = &buffer[consumed..filled];
-            file_hasher.update(chunk);
-            file_size += chunk.len() as u64;
-
-            let hash = compute_hash(chunk);
-            let prefix = hash_prefix(&hash)?;
-            let chunk_dir = base_dir.join(prefix);
-            let chunk_path = chunk_dir.join(&hash);
-
-            if !chunk_path.exists() {
-                std::fs::create_dir_all(&chunk_dir)?;
-                std::fs::write(&chunk_path, chunk)?;
-            }
-
-            chunk_hashes.push(hash);
-            chunk_sizes.push(chunk.len());
-        }
-
-        // 重置 buffer，准备下一轮读取
-        filled = 0;
+    if !chunk.is_empty() {
+        persist_chunk(base_dir, &chunk, &mut chunk_hashes, &mut chunk_sizes)?;
     }
 
     let file_checksum = file_hasher.finalize().to_hex().to_string();
     Ok((chunk_hashes, chunk_sizes, file_size, file_checksum))
+}
+
+#[derive(Clone, Copy)]
+struct ChunkBounds {
+    min: usize,
+    target: usize,
+    max: usize,
+    mask: u64,
+}
+
+fn chunk_bounds(chunk_size: usize) -> ChunkBounds {
+    let target = chunk_size.max(MIN_CDC_CHUNK_SIZE);
+    let min = (target / 2).max(MIN_CDC_CHUNK_SIZE.min(target));
+    let max = target.saturating_mul(MAX_CDC_CHUNK_MULTIPLIER).max(target);
+    let mask_base = (target / 8).max(1);
+    let mask = mask_base.next_power_of_two().saturating_sub(1) as u64;
+
+    ChunkBounds {
+        min,
+        target,
+        max,
+        mask,
+    }
+}
+
+fn rolling_gear(byte: u8) -> u64 {
+    (byte as u64)
+        .wrapping_add(1)
+        .wrapping_mul(0x9e37_79b1_85eb_ca87)
+        .rotate_left((byte & 31) as u32)
+}
+
+fn update_rolling_hash(
+    current: u64,
+    byte: u8,
+    window: &mut std::collections::VecDeque<u8>,
+) -> u64 {
+    let outgoing = if window.len() == CDC_ROLLING_WINDOW_SIZE {
+        window.pop_front()
+    } else {
+        None
+    };
+    window.push_back(byte);
+
+    let mut next = current;
+    if let Some(outgoing) = outgoing {
+        next = next.wrapping_sub(rolling_gear(outgoing));
+    }
+    next.wrapping_add(rolling_gear(byte))
+}
+
+fn should_cut_chunk(
+    len: usize,
+    rolling_hash: u64,
+    bounds: ChunkBounds,
+) -> bool {
+    len >= bounds.max
+        || (len >= bounds.min && (rolling_hash & bounds.mask) == 0)
+}
+
+fn persist_chunk(
+    base_dir: &Path,
+    chunk: &[u8],
+    chunk_hashes: &mut Vec<String>,
+    chunk_sizes: &mut Vec<usize>,
+) -> Result<(), crate::error::AppError> {
+    let hash = compute_hash(chunk);
+    let prefix = hash_prefix(&hash)?;
+    let chunk_dir = base_dir.join(prefix);
+    let chunk_path = chunk_dir.join(&hash);
+
+    if !chunk_path.exists() {
+        std::fs::create_dir_all(&chunk_dir)?;
+        std::fs::write(&chunk_path, chunk)?;
+    }
+
+    chunk_hashes.push(hash);
+    chunk_sizes.push(chunk.len());
+    Ok(())
 }
 
 /// 从分块存储恢复文件
@@ -145,8 +208,8 @@ pub fn restore_file(
                     hash
                 )));
             }
-            let chunk_data = std::fs::read(&chunk_path)?;
-            out_file.write_all(&chunk_data)?;
+            let mut chunk_file = std::fs::File::open(&chunk_path)?;
+            std::io::copy(&mut chunk_file, &mut out_file)?;
         }
 
         out_file.flush()?;
@@ -339,21 +402,15 @@ mod tests {
         let base_dir = dir.path().join("chunks");
         let file_path = dir.path().join("large.bin");
 
-        // 写入一个 10000 字节的文件，chunk_size=4096 → ceil(10000/4096) = 3
+        // 写入一个大文件，内容感知分块应产生多个 chunk
         let content: Vec<u8> = (0..10000).map(|i| (i % 256) as u8).collect();
         std::fs::write(&file_path, &content).unwrap();
 
         let (chunk_hashes, chunk_sizes, file_size, _checksum) =
             store_file(&base_dir, &file_path, 4096).unwrap();
 
-        let expected_chunks = (10000 + 4096 - 1) / 4096; // ceil(10000/4096) = 3
-        assert_eq!(
-            chunk_hashes.len(),
-            expected_chunks,
-            "10000 字节文件分 4096 chunk 应有 {} 个",
-            expected_chunks
-        );
-        assert_eq!(chunk_sizes.len(), expected_chunks);
+        assert!(chunk_hashes.len() > 1, "大文件应产生多个 chunk");
+        assert_eq!(chunk_sizes.len(), chunk_hashes.len());
         assert_eq!(file_size, 10000);
 
         // 验证 chunk 大小之和等于文件大小
@@ -363,11 +420,12 @@ mod tests {
             "所有 chunk 大小之和应等于文件大小"
         );
 
-        // 验证最后一个 chunk 大小 < chunk_size
-        assert!(
-            *chunk_sizes.last().unwrap() <= 4096,
-            "最后一个 chunk 不应超过 chunk_size"
-        );
+        // 内容感知分块允许可变大小，但非尾块不能超过最大边界
+        let bounds = chunk_bounds(4096);
+        for size in chunk_sizes.iter().take(chunk_sizes.len().saturating_sub(1))
+        {
+            assert!(*size <= bounds.max, "chunk 不应超过最大边界");
+        }
     }
 
     #[test]
@@ -400,6 +458,34 @@ mod tests {
             .filter(|e| e.file_type().map(|ft| ft.is_file()).unwrap_or(false))
             .count();
         assert_eq!(file_count, 1, "去重后磁盘上应只有 1 个 chunk 文件");
+    }
+
+    #[test]
+    fn test_content_defined_chunking_reuses_suffix_after_prefix_insert() {
+        let dir = tempdir().unwrap();
+        let base_dir = dir.path().join("chunks");
+        let file_path = dir.path().join("cdc.bin");
+
+        let content: Vec<u8> =
+            (0..64_000).map(|i| ((i * 31) % 251) as u8).collect();
+        std::fs::write(&file_path, &content).unwrap();
+        let (before_hashes, _, _, _) =
+            store_file(&base_dir, &file_path, 2048).unwrap();
+
+        let mut changed = b"inserted-prefix".to_vec();
+        changed.extend_from_slice(&content);
+        std::fs::write(&file_path, &changed).unwrap();
+        let (after_hashes, _, _, _) =
+            store_file(&base_dir, &file_path, 2048).unwrap();
+
+        let before: std::collections::HashSet<_> =
+            before_hashes.iter().collect();
+        let reused = after_hashes
+            .iter()
+            .filter(|hash| before.contains(hash))
+            .count();
+
+        assert!(reused > 0, "前缀插入后应能复用至少一个后续 chunk");
     }
 
     // ========== restore_file 测试 ==========
@@ -638,14 +724,15 @@ mod tests {
         let file_path = dir.path().join("large_original.bin");
         let restore_path = dir.path().join("large_restored.bin");
 
-        // 创建 20000 字节的内容，chunk_size=4096 → 5 个 chunk
+        // 创建 20000 字节的内容，应可分块存储并完整恢复
         let content: Vec<u8> = (0..20000).map(|i| (i % 251) as u8).collect(); // 251 为质数
         std::fs::write(&file_path, &content).unwrap();
 
-        let (chunk_hashes, _chunk_sizes, file_size, checksum) =
+        let (chunk_hashes, chunk_sizes, file_size, checksum) =
             store_file(&base_dir, &file_path, 4096).unwrap();
 
-        assert_eq!(chunk_hashes.len(), 5);
+        assert!(chunk_hashes.len() > 1);
+        assert_eq!(chunk_sizes.iter().sum::<usize>(), 20000);
         assert_eq!(file_size, 20000);
 
         // 恢复文件

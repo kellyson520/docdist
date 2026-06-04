@@ -119,14 +119,13 @@ export function DiffDetailView({ result }: DiffDetailViewProps) {
       )}
 
       {/* 差异块 */}
-      <div className="space-y-2">
+      <div className="overflow-hidden border border-gray-200 dark:border-gray-700">
         {result.diff_result.hunks.map((hunk, hunkIdx) => (
-          <div key={hunkIdx} className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
-            <div className="px-3 py-2 bg-gray-100 dark:bg-gray-700 text-left text-sm font-mono text-gray-700 dark:text-gray-300">
-              @@ -{hunk.old_start},+{hunk.new_start} @@
+          <div key={hunkIdx} className="border-b border-gray-200 last:border-b-0 dark:border-gray-700">
+            <div className="px-3 py-2 bg-blue-50 dark:bg-blue-950/40 text-left text-sm font-mono font-semibold text-blue-700 dark:text-blue-300">
+              @@ -{hunk.old_start},{hunk.old_lines} +{hunk.new_start},{hunk.new_lines} @@
             </div>
             <div className="font-mono text-xs">
-              {/* 使用虚拟化渲染优化大量数据 */}
               <VirtualizedChangesList changes={hunk.changes} />
             </div>
           </div>

@@ -1459,7 +1459,7 @@ mod tests {
     #[test]
     fn test_create_archive_multi_chunk_file() {
         let (service, dir) = setup_service();
-        // 10000 字节，chunk_size=4096，应分为 3 个 chunk
+        // 内容感知分块数量由内容边界决定，但大文件应分为多个 chunk
         let content: Vec<u8> = (0..10000).map(|i| (i % 256) as u8).collect();
         let fp = create_test_file(&dir, "large.bin", &content);
 
@@ -1467,9 +1467,18 @@ mod tests {
             service.create_archive(&fp, "large", vec![], None).unwrap();
         assert_eq!(archive.file_size, 10000);
         assert_eq!(
-            archive.chunk_count, 3,
-            "10000 bytes with chunk_size=4096 should produce 3 chunks"
+            archive.chunk_count,
+            db::get_archive_chunks(service.db(), &archive.id)
+                .unwrap()
+                .len() as i64
         );
+        assert!(archive.chunk_count > 1, "大文件应产生多个 chunk");
+
+        let restore_path = dir.path().join("large-restored.bin");
+        service
+            .restore_archive(&archive.id, Some(restore_path.to_str().unwrap()))
+            .unwrap();
+        assert_eq!(fs::read(&restore_path).unwrap(), content);
     }
 
     // ================================================================

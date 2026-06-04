@@ -6,8 +6,8 @@ pub mod types; // 预留，T4 会创建 engine.rs
 use serde::{Deserialize, Serialize};
 use similar::{ChangeTag, TextDiff};
 
-/// Maximum number of changes per hunk before splitting.
-const HUNK_MAX_LINES: usize = 20;
+/// Number of unchanged context lines shown around each changed region.
+const HUNK_CONTEXT_LINES: usize = 3;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DiffResult {
@@ -42,20 +42,13 @@ pub struct DiffStats {
 pub fn compute_diff(old_text: &str, new_text: &str) -> DiffResult {
     let diff = TextDiff::from_lines(old_text, new_text);
 
-    let mut hunks = Vec::new();
-    let mut current_hunk = DiffHunk {
-        old_start: 1,
-        old_lines: 0,
-        new_start: 1,
-        new_lines: 0,
-        changes: Vec::new(),
-    };
-
     let mut additions: u32 = 0;
     let mut deletions: u32 = 0;
     let mut unchanged: u32 = 0;
     let mut old_line: u32 = 1;
     let mut new_line: u32 = 1;
+    let mut all_changes = Vec::new();
+    let mut changed_indices = Vec::new();
 
     for change in diff.iter_all_changes() {
         let change_type = match change.tag() {
@@ -87,7 +80,11 @@ pub fn compute_diff(old_text: &str, new_text: &str) -> DiffResult {
             None
         };
 
-        current_hunk.changes.push(DiffChange {
+        if change.tag() != ChangeTag::Equal {
+            changed_indices.push(all_changes.len());
+        }
+
+        all_changes.push(DiffChange {
             change_type: change_type.to_string(),
             content: content.to_string(),
             old_line: old_ln,
@@ -102,36 +99,16 @@ pub fn compute_diff(old_text: &str, new_text: &str) -> DiffResult {
             ChangeTag::Equal | ChangeTag::Insert => new_line += 1,
             _ => {}
         }
-
-        match change.tag() {
-            ChangeTag::Equal => {
-                current_hunk.old_lines += 1;
-                current_hunk.new_lines += 1;
-            }
-            ChangeTag::Delete => {
-                current_hunk.old_lines += 1;
-            }
-            ChangeTag::Insert => {
-                current_hunk.new_lines += 1;
-            }
-        }
-
-        if current_hunk.changes.len() >= HUNK_MAX_LINES
-            && change.tag() == ChangeTag::Equal
-        {
-            hunks.push(current_hunk.clone());
-            current_hunk = DiffHunk {
-                old_start: old_line,
-                old_lines: 0,
-                new_start: new_line,
-                new_lines: 0,
-                changes: Vec::new(),
-            };
-        }
     }
 
-    if !current_hunk.changes.is_empty() {
-        hunks.push(current_hunk);
+    let mut hunks = Vec::new();
+    if !changed_indices.is_empty() {
+        let grouped_ranges =
+            group_changed_ranges(&changed_indices, all_changes.len());
+        hunks = grouped_ranges
+            .into_iter()
+            .map(|(start, end)| build_hunk(&all_changes[start..end]))
+            .collect();
     }
 
     DiffResult {
@@ -141,6 +118,48 @@ pub fn compute_diff(old_text: &str, new_text: &str) -> DiffResult {
             deletions,
             unchanged,
         },
+    }
+}
+
+fn group_changed_ranges(
+    changed_indices: &[usize],
+    total_changes: usize,
+) -> Vec<(usize, usize)> {
+    let mut ranges = Vec::new();
+    let mut start = changed_indices[0].saturating_sub(HUNK_CONTEXT_LINES);
+    let mut end =
+        (changed_indices[0] + HUNK_CONTEXT_LINES + 1).min(total_changes);
+
+    for &idx in &changed_indices[1..] {
+        let next_start = idx.saturating_sub(HUNK_CONTEXT_LINES);
+        let next_end = (idx + HUNK_CONTEXT_LINES + 1).min(total_changes);
+        if next_start <= end {
+            end = end.max(next_end);
+        } else {
+            ranges.push((start, end));
+            start = next_start;
+            end = next_end;
+        }
+    }
+
+    ranges.push((start, end));
+    ranges
+}
+
+fn build_hunk(changes: &[DiffChange]) -> DiffHunk {
+    let old_start = changes.iter().find_map(|c| c.old_line).unwrap_or(0);
+    let new_start = changes.iter().find_map(|c| c.new_line).unwrap_or(0);
+    let old_lines =
+        changes.iter().filter(|c| c.old_line.is_some()).count() as u32;
+    let new_lines =
+        changes.iter().filter(|c| c.new_line.is_some()).count() as u32;
+
+    DiffHunk {
+        old_start,
+        old_lines,
+        new_start,
+        new_lines,
+        changes: changes.to_vec(),
     }
 }
 
@@ -167,6 +186,7 @@ mod tests {
         assert_eq!(result.stats.deletions, 0);
         assert!(result.stats.unchanged > 0);
         assert_eq!(result.stats.unchanged, 3);
+        assert!(result.hunks.is_empty(), "无变化时不应输出 hunk");
     }
 
     // Test 3: Pure insertion (old empty) → deletions=0
@@ -199,20 +219,24 @@ mod tests {
         assert_eq!(result.stats.additions, 2);
     }
 
-    // Test 6: More than 20 lines → hunk splits correctly
+    // Test 6: Unchanged regions away from edits are omitted like git unified diff
     #[test]
-    fn test_diff_hunk_split_at_20_lines() {
-        // Build two texts where all lines are equal (30 lines) to trigger hunk split
-        let lines: Vec<String> =
-            (1..=30).map(|i| format!("line {}", i)).collect();
-        let text = lines.join("\n") + "\n";
-        let result = compute_diff(&text, &text);
-        // All lines are equal, so after 20 lines the hunk should split
-        assert!(
-            result.hunks.len() >= 2,
-            "Expected at least 2 hunks for 30 equal lines, got {}",
-            result.hunks.len()
-        );
+    fn test_diff_uses_unified_context() {
+        let old = (1..=20)
+            .map(|i| format!("line {}", i))
+            .collect::<Vec<_>>()
+            .join("\n")
+            + "\n";
+        let new = old.replace("line 10\n", "line ten\n");
+        let result = compute_diff(&old, &new);
+
+        assert_eq!(result.hunks.len(), 1);
+        let hunk = &result.hunks[0];
+        assert_eq!(hunk.old_start, 7);
+        assert_eq!(hunk.new_start, 7);
+        assert_eq!(hunk.changes.len(), 8);
+        assert_eq!(hunk.changes.first().unwrap().content, "line 7");
+        assert_eq!(hunk.changes.last().unwrap().content, "line 13");
     }
 
     // Test 7: Single-line change has correct line numbers
@@ -262,5 +286,34 @@ mod tests {
         assert!(delete_changes[0].new_line.is_none());
         assert!(add_changes[0].old_line.is_none());
         assert!(add_changes[0].new_line.is_some());
+    }
+
+    #[test]
+    fn test_diff_separates_distant_changes_into_multiple_hunks() {
+        let old = (1..=30)
+            .map(|i| format!("line {}", i))
+            .collect::<Vec<_>>()
+            .join("\n")
+            + "\n";
+        let new = old
+            .replace("line 5\n", "line five\n")
+            .replace("line 25\n", "line twenty five\n");
+
+        let result = compute_diff(&old, &new);
+
+        assert_eq!(result.hunks.len(), 2);
+        assert_eq!(result.hunks[0].old_start, 2);
+        assert_eq!(result.hunks[1].old_start, 22);
+    }
+
+    #[test]
+    fn test_diff_pure_insert_hunk_uses_zero_old_start() {
+        let result = compute_diff("", "line 1\nline 2\n");
+
+        assert_eq!(result.hunks.len(), 1);
+        assert_eq!(result.hunks[0].old_start, 0);
+        assert_eq!(result.hunks[0].old_lines, 0);
+        assert_eq!(result.hunks[0].new_start, 1);
+        assert_eq!(result.hunks[0].new_lines, 2);
     }
 }
