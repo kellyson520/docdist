@@ -133,24 +133,54 @@ export default function App() {
 
   return (
     <>
-      <div className="flex h-screen bg-gray-50 dark:bg-gray-900 transition-colors">
+      <div className="flex h-screen flex-col bg-gray-50 transition-colors dark:bg-gray-900 md:flex-row">
         {/* Sidebar */}
-        <div className="w-56 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col transition-colors">
+        <div className="flex w-full flex-shrink-0 flex-col border-b border-gray-200 bg-white transition-colors dark:border-gray-700 dark:bg-gray-800 md:h-full md:w-56 md:border-b-0 md:border-r">
           {/* Logo */}
-          <div className="p-4 border-b border-gray-100 dark:border-gray-700">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center shadow-sm">
-                <span className="text-white text-sm font-bold">追</span>
+          <div className="border-b border-gray-100 p-3 dark:border-gray-700 md:p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center shadow-sm">
+                  <span className="text-white text-sm font-bold">追</span>
+                </div>
+                <div className="min-w-0">
+                  <h1 className="font-bold text-sm dark:text-white">DocDist</h1>
+                  <p className="text-xs text-gray-400">文件历史管理</p>
+                </div>
               </div>
-              <div>
-                <h1 className="font-bold text-sm dark:text-white">DocDist</h1>
-                <p className="text-xs text-gray-400">文件历史管理</p>
+
+              <div className="flex items-center gap-1 md:hidden">
+                <ThemeToggle />
+                <button
+                  onClick={() => setShowLogViewer(true)}
+                  aria-label="日志"
+                  className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition"
+                  title="日志"
+                >
+                  <Terminal className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => setShowSettings(true)}
+                  aria-label="设置"
+                  className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition"
+                  title="设置"
+                >
+                  <Settings className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => setIsMini(true)}
+                  aria-label="迷你模式"
+                  className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition"
+                  title="迷你模式"
+                >
+                  <Minimize2 className="w-4 h-4" />
+                </button>
               </div>
             </div>
           </div>
 
           {/* Navigation */}
-          <nav className="flex-1 p-3 space-y-1">
+          <nav className="flex gap-1 overflow-x-auto p-2 md:block md:flex-1 md:space-y-1 md:p-3">
             {navItems.map(({ id, label, icon: Icon, shortcut }) => {
               const isActive = id === 'enhanced-diff'
                 ? (view === 'enhanced-diff' || (view === 'diff' && showEnhancedDiff))
@@ -160,7 +190,7 @@ export default function App() {
                 key={id}
                 onClick={() => handleViewChange(id)}
                 aria-current={isActive ? 'page' : undefined}
-                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-all duration-150 group ${
+                className={`group flex min-w-max items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-all duration-150 md:w-full ${
                   isActive
                     ? 'bg-primary-50 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400 font-medium shadow-sm'
                     : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 hover:text-gray-800 dark:hover:text-gray-200'
@@ -178,7 +208,7 @@ export default function App() {
 
           {/* Stats */}
           {statistics && (
-            <div className="p-3 border-t border-gray-100 dark:border-gray-700">
+            <div className="hidden border-t border-gray-100 p-3 dark:border-gray-700 md:block">
               <div className="text-xs text-gray-400 space-y-1">
                 <p className="flex items-center gap-1.5">
                   <span className="w-1.5 h-1.5 rounded-full bg-green-400" />
@@ -197,7 +227,7 @@ export default function App() {
           )}
 
           {/* Bottom actions */}
-          <div className="p-3 border-t border-gray-100 dark:border-gray-700 flex items-center justify-between">
+          <div className="hidden items-center justify-between border-t border-gray-100 p-3 dark:border-gray-700 md:flex">
             <ThemeToggle />
             <div className="flex items-center gap-1">
               <button
@@ -230,7 +260,7 @@ export default function App() {
 
         {/* Main content */}
         <div className="flex-1 flex flex-col overflow-hidden">
-          <div className="flex-1 overflow-auto p-6 animate-fade-in">
+          <div className="flex-1 overflow-auto p-3 animate-fade-in sm:p-6">
             <ErrorBoundary>
               <Suspense fallback={<div className="flex items-center justify-center h-full"><div className="animate-spin w-6 h-6 border-2 border-primary-400 border-t-transparent rounded-full" /></div>}>
                 {view === 'list' && <ArchiveList />}

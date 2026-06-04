@@ -4,7 +4,7 @@ use crate::diff::types::*;
 use crate::diff::DiffStats as DiffResultStats;
 use crate::error::AppError;
 use crate::storage;
-use std::collections::VecDeque;
+use std::collections::{HashMap, HashSet};
 use std::path::{Component, Path};
 
 /// 检测并转换文本编码（支持 UTF-8、GBK/GB2312）
@@ -17,6 +17,68 @@ fn detect_and_convert_encoding(content: &[u8]) -> String {
     // 使用 encoding_rs 进行 GBK 解码（覆盖 GB2312/GBK/GB18030）
     let (decoded, _encoding, _had_errors) = encoding_rs::GBK.decode(content);
     decoded.to_string()
+}
+
+fn compare_archive_order(a: &Archive, b: &Archive) -> std::cmp::Ordering {
+    a.created_at
+        .cmp(&b.created_at)
+        .then_with(|| a.id.cmp(&b.id))
+}
+
+fn build_archive_tree_order(archives: Vec<Archive>) -> Vec<Archive> {
+    if archives.is_empty() {
+        return Vec::new();
+    }
+
+    let id_set: HashSet<String> =
+        archives.iter().map(|archive| archive.id.clone()).collect();
+    let mut roots = Vec::new();
+    let mut children_by_parent: HashMap<String, Vec<Archive>> = HashMap::new();
+
+    for archive in archives {
+        match archive.parent_id.as_ref() {
+            Some(parent_id) if id_set.contains(parent_id) => {
+                children_by_parent
+                    .entry(parent_id.clone())
+                    .or_default()
+                    .push(archive);
+            }
+            _ => roots.push(archive),
+        }
+    }
+
+    roots.sort_by(compare_archive_order);
+    for children in children_by_parent.values_mut() {
+        children.sort_by(compare_archive_order);
+    }
+
+    let mut ordered = Vec::with_capacity(id_set.len());
+    let mut visited = HashSet::new();
+    let mut stack: Vec<Archive> = roots.into_iter().rev().collect();
+
+    while let Some(archive) = stack.pop() {
+        if !visited.insert(archive.id.clone()) {
+            continue;
+        }
+
+        if let Some(children) = children_by_parent.get(&archive.id) {
+            for child in children.iter().rev() {
+                stack.push(child.clone());
+            }
+        }
+        ordered.push(archive);
+    }
+
+    let mut remaining: Vec<Archive> = children_by_parent
+        .values()
+        .flat_map(|children| children.iter())
+        .filter(|archive| !visited.contains(&archive.id))
+        .cloned()
+        .collect();
+    remaining.sort_by(compare_archive_order);
+    ordered.extend(remaining);
+
+    ordered
 }
 
 /// 验证归档源文件路径安全性（防信息泄露 CWE-200）
@@ -602,54 +664,8 @@ impl ArchiveService {
         &self,
         file_path: Option<&str>,
     ) -> Result<Vec<Archive>, AppError> {
-        // 获取所有归档（无 LIMIT），按 file_path 过滤（如果有）
         let all = db::get_all_archives(&self.pool, file_path, None)?;
-
-        // 找出根节点：parent_id 为 None，或者 parent_id 不在当前集合中
-        let id_set: std::collections::HashSet<String> =
-            all.iter().map(|a| a.id.clone()).collect();
-        let roots: Vec<Archive> = all
-            .into_iter()
-            .filter(|a| {
-                a.parent_id.is_none()
-                    || !a
-                        .parent_id
-                        .as_ref()
-                        .is_some_and(|pid| id_set.contains(pid))
-            })
-            .collect();
-
-        // 迭代收集每个根节点及其所有后代（BFS，避免递归栈溢出）
-        let mut result = Vec::new();
-        for root in &roots {
-            result.extend(self.collect_descendants_iterative(root)?);
-        }
-
-        Ok(result)
-    }
-
-    /// 迭代收集归档节点及其所有后代（BFS）——优化版，一次性加载所有存档避免 N+1 查询
-    fn collect_descendants_iterative(
-        &self,
-        root: &Archive,
-    ) -> Result<Vec<Archive>, AppError> {
-        // 一次性加载所有存档并按 parent_id 分组
-        let grouped = db::get_all_archives_grouped_by_parent(&self.pool)?;
-
-        let mut result = Vec::new();
-        let mut queue = VecDeque::new();
-        queue.push_back(root.clone());
-
-        while let Some(current) = queue.pop_front() {
-            result.push(current.clone());
-            // 从分组中获取子节点，而非逐个查询数据库
-            if let Some(children) = grouped.get(&current.id) {
-                for child in children {
-                    queue.push_back(child.clone());
-                }
-            }
-        }
-        Ok(result)
+        Ok(build_archive_tree_order(all))
     }
 
     /// 获取统计信息
@@ -913,6 +929,45 @@ mod tests {
         let file_path = dir.path().join(name);
         fs::write(&file_path, content).unwrap();
         file_path.to_string_lossy().to_string()
+    }
+
+    fn make_test_archive(
+        id: &str,
+        parent_id: Option<&str>,
+        created_at: &str,
+    ) -> Archive {
+        Archive {
+            id: id.to_string(),
+            file_path: "/tmp/tree.txt".to_string(),
+            file_name: "tree.txt".to_string(),
+            file_size: 1,
+            checksum: format!("checksum-{id}"),
+            chunk_count: 1,
+            note: String::new(),
+            tags: vec![],
+            parent_id: parent_id.map(|value| value.to_string()),
+            created_at: created_at.to_string(),
+        }
+    }
+
+    #[test]
+    fn test_build_archive_tree_order_is_stable_and_parent_first() {
+        let archives = vec![
+            make_test_archive("branch-b", Some("root"), "2026-01-03 00:00:00"),
+            make_test_archive("leaf", Some("branch-a"), "2026-01-04 00:00:00"),
+            make_test_archive("root", None, "2026-01-01 00:00:00"),
+            make_test_archive("branch-a", Some("root"), "2026-01-02 00:00:00"),
+            make_test_archive(
+                "orphan",
+                Some("missing-parent"),
+                "2026-01-05 00:00:00",
+            ),
+        ];
+
+        let ordered = build_archive_tree_order(archives);
+        let ids: Vec<&str> = ordered.iter().map(|a| a.id.as_str()).collect();
+
+        assert_eq!(ids, vec!["root", "branch-a", "leaf", "branch-b", "orphan"]);
     }
 
     // ================================================================

@@ -1,10 +1,22 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { invoke } from '@tauri-apps/api/tauri';
 import { useArchiveStore } from '../../stores/archiveStore';
 import { shallow } from 'zustand/shallow';
 import { formatFileSize } from '../../utils/format';
 import { formatSmartTime } from '../../utils/time';
-import { GitBranch, FileText, RotateCcw, ChevronDown, ChevronRight, ZoomIn, ZoomOut } from 'lucide-react';
+import {
+  GitBranch,
+  FileText,
+  RotateCcw,
+  ChevronDown,
+  ChevronRight,
+  ZoomIn,
+  ZoomOut,
+  Search,
+  Layers,
+  GitCommit,
+  Tag,
+} from 'lucide-react';
 import type { Archive } from '../../types';
 
 interface TreeNode {
@@ -12,133 +24,274 @@ interface TreeNode {
   children: TreeNode[];
 }
 
-function buildTree(archives: Archive[]): TreeNode[] {
-  const map = new Map<string, TreeNode>();
-  const roots: TreeNode[] = [];
+interface GraphStats {
+  total: number;
+  roots: number;
+  branches: number;
+  maxDepth: number;
+  tagged: number;
+}
 
-  for (const archive of archives) {
-    map.set(archive.id, { archive, children: [] });
+function compareArchiveOrder(a: Archive, b: Archive): number {
+  const byDate = a.created_at.localeCompare(b.created_at);
+  return byDate === 0 ? a.id.localeCompare(b.id) : byDate;
+}
+
+function buildTree(archives: Archive[]): TreeNode[] {
+  const sorted = [...archives].sort(compareArchiveOrder);
+  const idSet = new Set(sorted.map((archive) => archive.id));
+  const attached = new Set<string>();
+  const childrenByParent = new Map<string, Archive[]>();
+
+  for (const archive of sorted) {
+    if (archive.parent_id && archive.parent_id !== archive.id && idSet.has(archive.parent_id)) {
+      const children = childrenByParent.get(archive.parent_id) ?? [];
+      children.push(archive);
+      childrenByParent.set(archive.parent_id, children);
+      attached.add(archive.id);
+    }
   }
 
-  for (const archive of archives) {
-    const node = map.get(archive.id)!;
-    if (archive.parent_id && map.has(archive.parent_id)) {
-      map.get(archive.parent_id)!.children.push(node);
-    } else {
-      roots.push(node);
+  const visited = new Set<string>();
+  const materialize = (archive: Archive, path: Set<string>): TreeNode => {
+    visited.add(archive.id);
+    const nextPath = new Set(path);
+    nextPath.add(archive.id);
+
+    const children = (childrenByParent.get(archive.id) ?? [])
+      .filter((child) => !nextPath.has(child.id))
+      .map((child) => materialize(child, nextPath));
+
+    return { archive, children };
+  };
+
+  const rootArchives = sorted.filter((archive) => !attached.has(archive.id));
+  const roots = (rootArchives.length > 0 ? rootArchives : sorted.slice(0, 1))
+    .map((archive) => materialize(archive, new Set()));
+
+  for (const archive of sorted) {
+    if (!visited.has(archive.id)) {
+      roots.push(materialize(archive, new Set()));
     }
   }
 
   return roots;
 }
 
+function matchesArchive(archive: Archive, query: string): boolean {
+  const value = query.trim().toLowerCase();
+  if (!value) return true;
+
+  return [
+    archive.file_name,
+    archive.file_path,
+    archive.note,
+    archive.created_at,
+    ...(archive.tags ?? []),
+  ]
+    .filter(Boolean)
+    .some((field) => field.toLowerCase().includes(value));
+}
+
+function filterTree(nodes: TreeNode[], query: string): TreeNode[] {
+  if (!query.trim()) return nodes;
+
+  return nodes.flatMap((node) => {
+    const children = filterTree(node.children, query);
+    if (matchesArchive(node.archive, query) || children.length > 0) {
+      return [{ ...node, children }];
+    }
+    return [];
+  });
+}
+
+function collectExpandableIds(nodes: TreeNode[]): Set<string> {
+  const ids = new Set<string>();
+  const visit = (node: TreeNode) => {
+    if (node.children.length > 0) {
+      ids.add(node.archive.id);
+      node.children.forEach(visit);
+    }
+  };
+  nodes.forEach(visit);
+  return ids;
+}
+
+function calculateStats(nodes: TreeNode[]): GraphStats {
+  const stats: GraphStats = {
+    total: 0,
+    roots: nodes.length,
+    branches: 0,
+    maxDepth: 0,
+    tagged: 0,
+  };
+
+  const visit = (node: TreeNode, depth: number) => {
+    stats.total += 1;
+    stats.maxDepth = Math.max(stats.maxDepth, depth + 1);
+    if (node.children.length > 0) stats.branches += 1;
+    if ((node.archive.tags ?? []).length > 0) stats.tagged += 1;
+    node.children.forEach((child) => visit(child, depth + 1));
+  };
+
+  nodes.forEach((node) => visit(node, 0));
+  return stats;
+}
+
 interface TreeNodeComponentProps {
   node: TreeNode;
   depth?: number;
+  index: number;
+  siblingCount: number;
   onSelect: (archive: Archive) => void;
   onRestore: (id: string) => void;
   expandedNodes: Set<string>;
   toggleNode: (id: string) => void;
-  zoom: number;
+  latestId?: string;
+  selectedId?: string;
 }
 
-function TreeNodeComponent({ 
-  node, 
-  depth = 0, 
-  onSelect, 
-  onRestore, 
-  expandedNodes, 
+function TreeNodeComponent({
+  node,
+  depth = 0,
+  index,
+  siblingCount,
+  onSelect,
+  onRestore,
+  expandedNodes,
   toggleNode,
-  zoom 
+  latestId,
+  selectedId,
 }: TreeNodeComponentProps) {
   const hasChildren = node.children.length > 0;
   const isExpanded = expandedNodes.has(node.archive.id);
+  const isLatest = node.archive.id === latestId;
+  const isSelected = node.archive.id === selectedId;
+  const isLastSibling = index === siblingCount - 1;
 
   return (
-    <div style={{ marginLeft: depth > 0 ? 24 * zoom : 0 }}>
-      <div className="flex items-start gap-2 mb-2 animate-slide-in">
-        {/* Tree lines */}
-        <div className="flex flex-col items-center">
+    <div className="relative">
+      {depth > 0 && (
+        <>
           <div
-            className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 cursor-pointer transition-all
-              ${hasChildren ? 'bg-primary-100 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400 hover:bg-primary-200 dark:hover:bg-primary-800/40' : 'bg-gray-100 dark:bg-gray-700 text-gray-400 dark:text-gray-500'}`}
+            className={`absolute left-0 top-0 w-px bg-gray-200 dark:bg-gray-700 ${
+              isLastSibling ? 'h-6' : 'h-full'
+            }`}
+          />
+          <div className="absolute left-0 top-6 h-px w-6 bg-gray-200 dark:bg-gray-700" />
+        </>
+      )}
+
+      <div className={depth > 0 ? 'pl-6' : ''}>
+        <div className="flex items-start gap-3 pb-3">
+          <button
             onClick={() => hasChildren && toggleNode(node.archive.id)}
+            aria-label={hasChildren ? (isExpanded ? '折叠分支' : '展开分支') : '版本节点'}
+            className={`mt-3 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg border transition ${
+              hasChildren
+                ? 'border-primary-200 bg-primary-50 text-primary-600 hover:bg-primary-100 dark:border-primary-800 dark:bg-primary-900/30 dark:text-primary-300'
+                : 'border-gray-200 bg-white text-gray-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-500'
+            }`}
           >
             {hasChildren ? (
-              isExpanded ? (
-                <ChevronDown className="w-3 h-3" />
-              ) : (
-                <ChevronRight className="w-3 h-3" />
-              )
+              isExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />
             ) : (
-              <FileText className="w-3 h-3" />
+              <GitCommit className="h-3.5 w-3.5" />
+            )}
+          </button>
+
+          <div
+            onClick={() => onSelect(node.archive)}
+            className={`group min-w-[280px] max-w-2xl flex-1 cursor-pointer rounded-lg border bg-white p-3 shadow-sm transition dark:bg-gray-800 ${
+              isSelected
+                ? 'border-primary-400 ring-2 ring-primary-100 dark:border-primary-500 dark:ring-primary-900/40'
+                : 'border-gray-200 hover:border-primary-300 hover:shadow-md dark:border-gray-700 dark:hover:border-primary-600'
+            }`}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="flex min-w-0 items-center gap-2">
+                  <FileText className="h-4 w-4 flex-shrink-0 text-gray-400 dark:text-gray-500" />
+                  <span className="truncate text-sm font-semibold text-gray-800 dark:text-gray-100">
+                    {node.archive.file_name}
+                  </span>
+                  {isLatest && (
+                    <span className="rounded-full bg-accent-50 px-2 py-0.5 text-[11px] font-medium text-accent-600 dark:bg-accent-600/15 dark:text-accent-300">
+                      最新
+                    </span>
+                  )}
+                </div>
+                <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
+                  <span>{formatSmartTime(node.archive.created_at)}</span>
+                  <span>{formatFileSize(node.archive.file_size)}</span>
+                  {hasChildren && <span>{node.children.length} 个后续版本</span>}
+                </div>
+              </div>
+
+              <button
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onRestore(node.archive.id);
+                }}
+                className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg text-gray-400 opacity-0 transition hover:bg-primary-50 hover:text-primary-600 group-hover:opacity-100 dark:hover:bg-primary-900/30 dark:hover:text-primary-300"
+                title="恢复此版本"
+                aria-label="恢复此版本"
+              >
+                <RotateCcw className="h-4 w-4" />
+              </button>
+            </div>
+
+            {(node.archive.note || (node.archive.tags ?? []).length > 0) && (
+              <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-gray-100 pt-2 text-xs dark:border-gray-700">
+                {node.archive.note && (
+                  <span className="max-w-full truncate text-gray-600 dark:text-gray-300">
+                    {node.archive.note}
+                  </span>
+                )}
+                {(node.archive.tags ?? []).slice(0, 4).map((tag) => (
+                  <span
+                    key={tag}
+                    className="inline-flex items-center gap-1 rounded-md bg-gray-100 px-1.5 py-0.5 text-gray-600 dark:bg-gray-700 dark:text-gray-300"
+                  >
+                    <Tag className="h-3 w-3" />
+                    {tag}
+                  </span>
+                ))}
+              </div>
             )}
           </div>
-          {hasChildren && isExpanded && (
-            <div className="w-0.5 h-full bg-gray-200 dark:bg-gray-700 mt-1" />
-          )}
         </div>
 
-        {/* Node content */}
-        <div
-          className="flex-1 p-3 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-primary-300 dark:hover:border-primary-600 cursor-pointer transition group"
-          onClick={() => onSelect(node.archive)}
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-medium truncate dark:text-gray-200">{node.archive.file_name}</span>
-            <span className="text-xs text-gray-400 dark:text-gray-500">{formatSmartTime(node.archive.created_at)}</span>
+        {hasChildren && isExpanded && (
+          <div className="ml-3">
+            {node.children.map((child, childIndex) => (
+              <TreeNodeComponent
+                key={child.archive.id}
+                node={child}
+                depth={depth + 1}
+                index={childIndex}
+                siblingCount={node.children.length}
+                onSelect={onSelect}
+                onRestore={onRestore}
+                expandedNodes={expandedNodes}
+                toggleNode={toggleNode}
+                latestId={latestId}
+                selectedId={selectedId}
+              />
+            ))}
           </div>
-          <div className="flex items-center gap-2 mt-1 text-xs text-gray-500 dark:text-gray-400">
-            <span>{formatFileSize(node.archive.file_size)}</span>
-            {node.archive.note && (
-              <>
-                <span>·</span>
-                <span className="truncate">{node.archive.note}</span>
-              </>
-            )}
-          </div>
-          <div className="mt-2 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-            <button
-              onClick={(e) => { e.stopPropagation(); onRestore(node.archive.id); }}
-              className="flex items-center gap-1 text-xs text-primary-600 dark:text-primary-400 hover:underline"
-            >
-              <RotateCcw className="w-3 h-3" />
-              恢复
-            </button>
-            {hasChildren && (
-              <span className="text-xs text-gray-400 dark:text-gray-500">
-                {node.children.length} 个子版本
-              </span>
-            )}
-          </div>
-        </div>
+        )}
       </div>
-
-      {hasChildren && isExpanded && (
-        <div className="ml-3">
-          {node.children.map((child) => (
-            <TreeNodeComponent 
-              key={child.archive.id} 
-              node={child} 
-              depth={depth + 1}
-              onSelect={onSelect}
-              onRestore={onRestore}
-              expandedNodes={expandedNodes}
-              toggleNode={toggleNode}
-              zoom={zoom}
-            />
-          ))}
-        </div>
-      )}
     </div>
   );
 }
 
 export function IterationGraph() {
-  const { selectArchive, restoreArchive, treeRevision } = useArchiveStore(
+  const { selectArchive, restoreArchive, selectedArchive, treeRevision } = useArchiveStore(
     (s) => ({
       selectArchive: s.selectArchive,
       restoreArchive: s.restoreArchive,
+      selectedArchive: s.selectedArchive,
       treeRevision: s.treeRevision,
     }),
     shallow,
@@ -146,24 +299,47 @@ export function IterationGraph() {
   const [tree, setTree] = useState<TreeNode[]>([]);
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
   const [zoom, setZoom] = useState(1);
+  const [query, setQuery] = useState('');
+  const [loading, setLoading] = useState(false);
 
   const loadTree = useCallback(async () => {
+    setLoading(true);
     try {
       const archives = await invoke<Archive[]>('get_archive_tree');
       const builtTree = buildTree(archives);
       setTree(builtTree);
-
-      // Auto-expand root nodes
-      const rootIds = new Set(builtTree.map(n => n.archive.id));
-      setExpandedNodes(rootIds);
+      setExpandedNodes(collectExpandableIds(builtTree));
     } catch (err) {
       console.error('Failed to load archive tree:', err);
+    } finally {
+      setLoading(false);
     }
   }, []);
 
   useEffect(() => {
     loadTree();
   }, [loadTree, treeRevision]);
+
+  const visibleTree = useMemo(() => filterTree(tree, query), [tree, query]);
+  const stats = useMemo(() => calculateStats(tree), [tree]);
+  const visibleStats = useMemo(() => calculateStats(visibleTree), [visibleTree]);
+  const latestId = useMemo(() => {
+    const allArchives: Archive[] = [];
+    const collect = (nodes: TreeNode[]) => {
+      for (const node of nodes) {
+        allArchives.push(node.archive);
+        collect(node.children);
+      }
+    };
+    collect(tree);
+    return allArchives.sort((a, b) => b.created_at.localeCompare(a.created_at))[0]?.id;
+  }, [tree]);
+
+  useEffect(() => {
+    if (query.trim()) {
+      setExpandedNodes(collectExpandableIds(visibleTree));
+    }
+  }, [query, visibleTree]);
 
   const toggleNode = useCallback((id: string) => {
     setExpandedNodes(prev => {
@@ -178,18 +354,8 @@ export function IterationGraph() {
   }, []);
 
   const expandAll = useCallback(() => {
-    const allIds = new Set<string>();
-    const collectIds = (nodes: TreeNode[]) => {
-      for (const node of nodes) {
-        if (node.children.length > 0) {
-          allIds.add(node.archive.id);
-          collectIds(node.children);
-        }
-      }
-    };
-    collectIds(tree);
-    setExpandedNodes(allIds);
-  }, [tree]);
+    setExpandedNodes(collectExpandableIds(visibleTree));
+  }, [visibleTree]);
 
   const collapseAll = useCallback(() => {
     setExpandedNodes(new Set());
@@ -200,76 +366,125 @@ export function IterationGraph() {
   }, []);
 
   const handleZoomOut = useCallback(() => {
-    setZoom(prev => Math.max(Math.round((prev - 0.1) * 10) / 10, 0.5));
+    setZoom(prev => Math.max(Math.round((prev - 0.1) * 10) / 10, 0.7));
   }, []);
 
-  return (
-    <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-gray-100 dark:border-gray-700">
-        <div className="flex items-center gap-2">
-          <GitBranch className="w-5 h-5 text-primary-500" />
-          <h2 className="font-semibold text-lg dark:text-white">迭代关系图</h2>
-          <span className="text-xs text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded-full">
-            {tree.length} 个根节点
-          </span>
-        </div>
+  const statItems = [
+    { label: '版本', value: stats.total, icon: GitCommit },
+    { label: '根节点', value: stats.roots, icon: GitBranch },
+    { label: '分支', value: stats.branches, icon: Layers },
+    { label: '深度', value: stats.maxDepth, icon: GitBranch },
+  ];
 
-        <div className="flex items-center gap-2">
-          {/* Zoom Controls */}
-          <div className="flex items-center gap-1 bg-gray-100 dark:bg-gray-700 rounded-lg p-0.5">
-            <button
-              onClick={handleZoomOut}
-              className="p-1 hover:bg-white dark:hover:bg-gray-600 rounded transition"
-              title="缩小"
-            >
-              <ZoomOut className="w-3.5 h-3.5 text-gray-600 dark:text-gray-400" />
-            </button>
-            <span className="text-xs text-gray-600 dark:text-gray-400 px-1">{Math.round(zoom * 100)}%</span>
-            <button
-              onClick={handleZoomIn}
-              className="p-1 hover:bg-white dark:hover:bg-gray-600 rounded transition"
-              title="放大"
-            >
-              <ZoomIn className="w-3.5 h-3.5 text-gray-600 dark:text-gray-400" />
-            </button>
+  return (
+    <div className="flex h-full flex-col overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
+      <div className="border-b border-gray-100 bg-gray-50/80 px-4 py-3 dark:border-gray-700 dark:bg-gray-900/30">
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-primary-50 text-primary-600 dark:bg-primary-900/30 dark:text-primary-300">
+              <GitBranch className="h-5 w-5" />
+            </div>
+            <div className="min-w-0">
+              <h2 className="text-base font-semibold text-gray-900 dark:text-white">迭代图谱</h2>
+              <p className="truncate text-xs text-gray-500 dark:text-gray-400">
+                按父子版本关系展示分支路径和关键节点
+              </p>
+            </div>
           </div>
 
-          {/* Expand/Collapse */}
-          <button
-            onClick={expandAll}
-            className="px-2 py-1.5 text-xs text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition"
-          >
-            展开全部
-          </button>
-          <button
-            onClick={collapseAll}
-            className="px-2 py-1.5 text-xs text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition"
-          >
-            折叠全部
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative min-w-[220px] flex-1 sm:flex-none">
+              <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="搜索备注、标签、文件名"
+                className="h-9 w-full rounded-lg border border-gray-200 bg-white pl-8 pr-3 text-sm text-gray-700 outline-none transition focus:border-primary-300 focus:ring-2 focus:ring-primary-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:border-primary-600 dark:focus:ring-primary-900/40"
+              />
+            </div>
+
+            <div className="flex items-center gap-1 rounded-lg border border-gray-200 bg-white p-0.5 dark:border-gray-700 dark:bg-gray-800">
+              <button
+                onClick={handleZoomOut}
+                className="flex h-8 w-8 items-center justify-center rounded-md text-gray-500 transition hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700"
+                title="缩小"
+                aria-label="缩小"
+              >
+                <ZoomOut className="h-4 w-4" />
+              </button>
+              <span className="w-10 text-center text-xs text-gray-500 dark:text-gray-400">{Math.round(zoom * 100)}%</span>
+              <button
+                onClick={handleZoomIn}
+                className="flex h-8 w-8 items-center justify-center rounded-md text-gray-500 transition hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700"
+                title="放大"
+                aria-label="放大"
+              >
+                <ZoomIn className="h-4 w-4" />
+              </button>
+            </div>
+
+            <button
+              onClick={expandAll}
+              className="h-9 rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-600 transition hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+            >
+              展开
+            </button>
+            <button
+              onClick={collapseAll}
+              className="h-9 rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-600 transition hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+            >
+              折叠
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-3 grid grid-cols-2 gap-2 md:grid-cols-4">
+          {statItems.map(({ label, value, icon: Icon }) => (
+            <div
+              key={label}
+              className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 dark:border-gray-700 dark:bg-gray-800"
+            >
+              <Icon className="h-4 w-4 text-gray-400" />
+              <span className="text-xs text-gray-500 dark:text-gray-400">{label}</span>
+              <span className="ml-auto text-sm font-semibold text-gray-900 dark:text-gray-100">{value}</span>
+            </div>
+          ))}
         </div>
       </div>
 
-      {/* Graph */}
-      <div className="flex-1 overflow-auto p-4">
-        {tree.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-64 text-gray-400 dark:text-gray-500">
-            <GitBranch className="w-12 h-12 mb-3 opacity-30" />
-            <p className="text-sm">暂无存档关系</p>
-            <p className="text-xs mt-1">创建存档时可以指定父存档，形成迭代关系</p>
+      <div className="flex-1 overflow-auto bg-[linear-gradient(#f3f4f6_1px,transparent_1px),linear-gradient(90deg,#f3f4f6_1px,transparent_1px)] bg-[size:28px_28px] p-4 dark:bg-[linear-gradient(#243041_1px,transparent_1px),linear-gradient(90deg,#243041_1px,transparent_1px)]">
+        {loading ? (
+          <div className="flex h-64 items-center justify-center text-sm text-gray-400 dark:text-gray-500">
+            正在加载迭代关系
+          </div>
+        ) : visibleTree.length === 0 ? (
+          <div className="flex h-64 flex-col items-center justify-center text-gray-400 dark:text-gray-500">
+            <GitBranch className="mb-3 h-12 w-12 opacity-30" />
+            <p className="text-sm">{query.trim() ? '没有匹配的版本节点' : '暂无存档关系'}</p>
+            <p className="mt-1 text-xs">创建存档后会自动形成可追踪的迭代路径</p>
           </div>
         ) : (
-          <div className="space-y-2" style={{ transform: `scale(${zoom})`, transformOrigin: 'top left' }}>
-            {tree.map((node) => (
-              <TreeNodeComponent 
-                key={node.archive.id} 
+          <div
+            className="inline-block min-w-full rounded-lg bg-white/70 p-3 shadow-sm backdrop-blur-sm dark:bg-gray-900/50"
+            style={{ transform: `scale(${zoom})`, transformOrigin: 'top left' }}
+          >
+            {query.trim() && (
+              <div className="mb-3 rounded-lg border border-primary-100 bg-primary-50 px-3 py-2 text-xs text-primary-700 dark:border-primary-800 dark:bg-primary-900/30 dark:text-primary-300">
+                当前显示 {visibleStats.total} 个匹配节点，已自动展开相关路径。
+              </div>
+            )}
+            {visibleTree.map((node, index) => (
+              <TreeNodeComponent
+                key={node.archive.id}
                 node={node}
+                index={index}
+                siblingCount={visibleTree.length}
                 onSelect={selectArchive}
                 onRestore={restoreArchive}
                 expandedNodes={expandedNodes}
                 toggleNode={toggleNode}
-                zoom={zoom}
+                latestId={latestId}
+                selectedId={selectedArchive?.id}
               />
             ))}
           </div>
