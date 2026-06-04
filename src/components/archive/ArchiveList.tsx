@@ -33,6 +33,7 @@ export function ArchiveList() {
   const deleteArchive = useArchiveStore((s) => s.deleteArchive);
   const deleteArchivesBatch = useArchiveStore((s) => s.deleteArchivesBatch);
   const compareArchivesEnhanced = useArchiveStore((s) => s.compareArchivesEnhanced);
+  const openExternalDiff = useArchiveStore((s) => s.openExternalDiff);
   const selectArchive = useArchiveStore((s) => s.selectArchive);
   const setSearchQuery = useArchiveStore((s) => s.setSearchQuery);
   const setView = useArchiveStore((s) => s.setView);
@@ -163,6 +164,19 @@ export function ArchiveList() {
                   } else {
                     toast.warning('只能对比同一文件的不同版本');
                   }
+                } else {
+                  toast.info('请先选择一个基准版本');
+                }
+              }}
+              onExternalCompare={() => {
+                if (selectedArchive && selectedArchive.id !== archive.id) {
+                  if (selectedArchive.file_path === archive.file_path) {
+                    openExternalDiff(selectedArchive.id, archive.id);
+                  } else {
+                    toast.warning('只能对比同一文件的不同版本');
+                  }
+                } else {
+                  toast.info('请先选择一个基准版本');
                 }
               }}
               onToggleSelect={() => toggleSelect(archive.id)}

@@ -2,8 +2,9 @@ import { useEffect, useState } from 'react';
 import { useArchiveStore, type AppConfig } from '../../stores/archiveStore';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
 import { shallow } from 'zustand/shallow';
-import { Settings, Save, RotateCcw, Trash2, Shield } from 'lucide-react';
+import { Settings, Save, RotateCcw, Trash2, Shield, GitCompare, FolderOpen } from 'lucide-react';
 import { formatFileSize } from '../../utils/format';
+import { open } from '@tauri-apps/api/dialog';
 
 export function SettingsPanel({ onClose }: { onClose: () => void }) {
   const { config, fetchConfig, updateConfig, cleanupOrphanChunks, verifyChunks } =
@@ -60,6 +61,19 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
       setVerifyResult(`⚠️ 发现 ${corrupted.length} 个损坏的 chunks`);
     }
     setVerifying(false);
+  };
+
+  const handleSelectExternalDiffTool = async () => {
+    const selected = await open({
+      multiple: false,
+      title: '选择外部对比工具',
+    });
+    if (selected && localConfig) {
+      setLocalConfig({
+        ...localConfig,
+        external_diff_tool: selected as string,
+      });
+    }
   };
 
   const panelRef = useFocusTrap();
@@ -294,6 +308,40 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                 />
                 <span className="text-sm text-gray-600 dark:text-gray-300">输出到日志文件</span>
               </label>
+            </div>
+          </section>
+
+          {/* External Diff */}
+          <section>
+            <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-3">外部对比</h3>
+            <div className="space-y-2">
+              <label className="block text-xs text-gray-500 dark:text-gray-400">
+                对比工具路径或命令
+              </label>
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <GitCompare className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                  <input
+                    type="text"
+                    value={localConfig.external_diff_tool ?? ''}
+                    onChange={(e) =>
+                      setLocalConfig({
+                        ...localConfig,
+                        external_diff_tool: e.target.value.trim() ? e.target.value : null,
+                      })
+                    }
+                    placeholder="例如 code、meld、/Applications/Beyond Compare.app/..."
+                    className="w-full rounded-lg border border-gray-200 py-1.5 pl-9 pr-3 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200"
+                  />
+                </div>
+                <button
+                  onClick={handleSelectExternalDiffTool}
+                  className="flex items-center gap-1.5 rounded-lg bg-gray-100 px-3 py-1.5 text-sm text-gray-600 transition hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
+                >
+                  <FolderOpen className="h-4 w-4" />
+                  选择
+                </button>
+              </div>
             </div>
           </section>
 

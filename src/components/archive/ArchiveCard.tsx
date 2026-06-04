@@ -4,7 +4,7 @@ import { formatFileSize } from '../../utils/format';
 import { formatSmartTime } from '../../utils/time';
 import {
   RotateCcw, Trash2, GitCompare, FileText, MoreVertical, Edit2,
-  Clock, HardDrive, Hash, CheckSquare, Square, ChevronDown, ChevronUp, Tag,
+  Clock, HardDrive, Hash, CheckSquare, Square, ChevronDown, ChevronUp, Tag, ExternalLink,
 } from 'lucide-react';
 import { EditArchiveDialog } from './EditArchiveDialog';
 import { useArchiveStore } from '../../stores/archiveStore';
@@ -17,6 +17,7 @@ interface ArchiveCardProps {
   onRestore: () => void;
   onDelete: () => void;
   onCompare: () => void;
+  onExternalCompare?: () => void;
   onToggleSelect?: () => void;
   versionIndex?: number;
   totalVersions?: number;
@@ -80,6 +81,7 @@ function ArchiveCardInner({
   onRestore,
   onDelete,
   onCompare,
+  onExternalCompare,
   onToggleSelect,
   versionIndex,
   totalVersions,
@@ -194,6 +196,16 @@ function ArchiveCardInner({
             >
               <GitCompare className="w-3.5 h-3.5 text-blue-500" />
             </button>
+            {onExternalCompare && (
+              <button
+                onClick={(e) => { e.stopPropagation(); onExternalCompare(); }}
+                aria-label="外部对比"
+                className="p-1.5 hover:bg-cyan-50 dark:hover:bg-cyan-900/20 rounded-lg transition"
+                title="使用外部工具对比"
+              >
+                <ExternalLink className="w-3.5 h-3.5 text-cyan-500" />
+              </button>
+            )}
             <div className="relative" ref={menuRef}>
               <button
                 onClick={(e) => { e.stopPropagation(); setShowMenu(!showMenu); }}

@@ -177,6 +177,7 @@ pub fn run() {
             commands::update_archive,
             commands::compare_archives,
             commands::compare_archives_enhanced,
+            commands::open_external_diff,
             commands::get_timeline,
             commands::get_children,
             commands::get_archive_tree,

@@ -17,6 +17,7 @@ const MAX_CHUNK_SIZE: usize = 256 * 1024 * 1024; // 256MB
 const MAX_WATCHER_DELAY_SECS: u64 = 3600;
 const MAX_LOG_FILE_SIZE_MB: u64 = 1024;
 const MAX_LOG_RETENTION_DAYS: u32 = 3650;
+const MAX_EXTERNAL_TOOL_LEN: usize = 4096;
 
 fn validate_exclude_patterns(patterns: &[String]) -> Result<(), AppError> {
     if patterns.len() > MAX_EXCLUDE_PATTERNS {
@@ -93,6 +94,14 @@ fn validate_config(config: &AppConfig) -> Result<(), AppError> {
             MAX_LOG_RETENTION_DAYS
         )));
     }
+    if let Some(tool) = &config.external_diff_tool {
+        if tool.to_string_lossy().trim().len() > MAX_EXTERNAL_TOOL_LEN {
+            return Err(AppError::Other(format!(
+                "外部对比工具路径不能超过 {} 字符",
+                MAX_EXTERNAL_TOOL_LEN
+            )));
+        }
+    }
     Ok(())
 }
 
@@ -126,6 +135,62 @@ fn safe_archive_entry_name(archive_id: &str, index: usize) -> String {
     };
     let limited: String = stem.chars().take(128).collect();
     format!("archives/{:06}_{}.bin", index + 1, limited)
+}
+
+fn safe_temp_archive_file_name(prefix: &str, archive: &Archive) -> String {
+    let sanitized: String = archive
+        .file_name
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_') {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let stem = sanitized.trim_matches('_');
+    let stem = if stem.is_empty() { "archive" } else { stem };
+    let limited: String = stem.chars().take(160).collect();
+    format!(
+        "{}-{}-{}",
+        prefix,
+        &archive.id[..8.min(archive.id.len())],
+        limited
+    )
+}
+
+fn configured_external_diff_tool(
+    config: &AppConfig,
+    override_tool: Option<String>,
+) -> Result<std::ffi::OsString, AppError> {
+    if let Some(tool) = override_tool {
+        let trimmed = tool.trim();
+        if !trimmed.is_empty() {
+            if trimmed.len() > MAX_EXTERNAL_TOOL_LEN {
+                return Err(AppError::Other(format!(
+                    "外部对比工具路径不能超过 {} 字符",
+                    MAX_EXTERNAL_TOOL_LEN
+                )));
+            }
+            return Ok(std::ffi::OsString::from(trimmed));
+        }
+    }
+
+    config
+        .external_diff_tool
+        .as_ref()
+        .and_then(|p| {
+            let raw = p.as_os_str();
+            if raw.is_empty() {
+                None
+            } else {
+                Some(raw.to_os_string())
+            }
+        })
+        .ok_or_else(|| {
+            AppError::Other("请先在设置中配置外部对比工具路径".to_string())
+        })
 }
 
 // ==================== 存档管理 ====================
@@ -225,6 +290,65 @@ pub async fn compare_archives_enhanced(
     id2: String,
 ) -> Result<EnhancedDiffResult, AppError> {
     state.service.compare_archives_enhanced(&id1, &id2)
+}
+
+#[tauri::command]
+pub async fn open_external_diff(
+    state: State<'_, AppState>,
+    id1: String,
+    id2: String,
+    tool_path: Option<String>,
+) -> Result<serde_json::Value, AppError> {
+    let tool = {
+        let config = state.config.lock().unwrap_or_else(|e| e.into_inner());
+        configured_external_diff_tool(&config, tool_path)?
+    };
+
+    let archive1 = db::get_archive(state.service.db(), &id1)?
+        .ok_or_else(|| AppError::Other("存档1不存在".to_string()))?;
+    let archive2 = db::get_archive(state.service.db(), &id2)?
+        .ok_or_else(|| AppError::Other("存档2不存在".to_string()))?;
+
+    let temp_dir =
+        std::env::temp_dir()
+            .join("docdist-external-diff")
+            .join(format!(
+                "{}-{}",
+                chrono::Utc::now().format("%Y%m%d%H%M%S"),
+                uuid::Uuid::new_v4()
+            ));
+    std::fs::create_dir_all(&temp_dir)?;
+
+    let left_path =
+        temp_dir.join(safe_temp_archive_file_name("left", &archive1));
+    let right_path =
+        temp_dir.join(safe_temp_archive_file_name("right", &archive2));
+
+    state
+        .service
+        .restore_archive(&archive1.id, left_path.to_str())?;
+    state
+        .service
+        .restore_archive(&archive2.id, right_path.to_str())?;
+
+    std::process::Command::new(&tool)
+        .arg(&left_path)
+        .arg(&right_path)
+        .current_dir(&temp_dir)
+        .spawn()
+        .map_err(|e| {
+            AppError::Other(format!(
+                "启动外部对比工具失败: {} ({})",
+                std::path::PathBuf::from(&tool).display(),
+                e
+            ))
+        })?;
+
+    Ok(serde_json::json!({
+        "tool": std::path::PathBuf::from(&tool).to_string_lossy(),
+        "left_path": left_path.to_string_lossy(),
+        "right_path": right_path.to_string_lossy(),
+    }))
 }
 
 #[tauri::command]
@@ -693,6 +817,55 @@ mod tests {
     #[test]
     fn test_chunk_path_for_hash_rejects_invalid_hash() {
         let result = chunk_path_for_hash(Path::new("/tmp/chunks"), "../bad");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_safe_temp_archive_file_name_removes_path_separators() {
+        let archive = Archive {
+            id: "12345678-1234-1234-1234-123456789abc".to_string(),
+            file_path: "/tmp/evil".to_string(),
+            file_name: "../../evil.txt".to_string(),
+            file_size: 1,
+            checksum: "abc".to_string(),
+            chunk_count: 1,
+            note: String::new(),
+            tags: vec![],
+            parent_id: None,
+            created_at: "2026-01-01 00:00:00.000".to_string(),
+        };
+
+        let name = safe_temp_archive_file_name("left", &archive);
+        assert_eq!(name, "left-12345678-.._.._evil.txt");
+        assert!(!name.contains('/'));
+        assert!(!name.contains('\\'));
+    }
+
+    #[test]
+    fn test_configured_external_diff_tool_prefers_override() {
+        let mut config = AppConfig::default();
+        config.external_diff_tool = Some(PathBuf::from("meld"));
+
+        let tool =
+            configured_external_diff_tool(&config, Some("code".to_string()))
+                .unwrap();
+
+        assert_eq!(tool, std::ffi::OsString::from("code"));
+    }
+
+    #[test]
+    fn test_configured_external_diff_tool_requires_config() {
+        let config = AppConfig::default();
+        let result = configured_external_diff_tool(&config, None);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_configured_external_diff_tool_rejects_long_override() {
+        let config = AppConfig::default();
+        let tool = "x".repeat(MAX_EXTERNAL_TOOL_LEN + 1);
+        let result = configured_external_diff_tool(&config, Some(tool));
+
         assert!(result.is_err());
     }
 }

@@ -111,6 +111,8 @@ pub struct AppConfig {
     pub auto_start: bool,
     /// 是否最小化到托盘
     pub minimize_to_tray: bool,
+    /// 外部差异对比工具路径或可执行命令
+    pub external_diff_tool: Option<PathBuf>,
 }
 
 impl Default for AppConfig {
@@ -123,6 +125,7 @@ impl Default for AppConfig {
             theme: "light".to_string(),
             auto_start: false,
             minimize_to_tray: true,
+            external_diff_tool: None,
         }
     }
 }
@@ -173,6 +176,7 @@ mod tests {
         assert_eq!(config.theme, "light");
         assert!(!config.auto_start);
         assert!(config.minimize_to_tray);
+        assert!(config.external_diff_tool.is_none());
     }
 
     #[test]
@@ -226,6 +230,7 @@ mod tests {
         config.theme = "dark".to_string();
         config.auto_start = true;
         config.minimize_to_tray = false;
+        config.external_diff_tool = Some(PathBuf::from("meld"));
         config.storage.chunk_size = 8192;
         config.storage.max_versions = 10;
         config.log.level = "debug".to_string();
@@ -242,6 +247,7 @@ mod tests {
         assert_eq!(loaded.theme, "dark");
         assert!(loaded.auto_start);
         assert!(!loaded.minimize_to_tray);
+        assert_eq!(loaded.external_diff_tool, Some(PathBuf::from("meld")));
         assert_eq!(loaded.storage.chunk_size, 8192);
         assert_eq!(loaded.storage.max_versions, 10);
         assert_eq!(loaded.log.level, "debug");

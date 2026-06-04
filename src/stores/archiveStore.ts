@@ -48,6 +48,7 @@ export interface AppConfig {
   theme: string;
   auto_start: boolean;
   minimize_to_tray: boolean;
+  external_diff_tool: string | null;
 }
 
 export interface CleanupStats {
@@ -107,6 +108,7 @@ export interface ArchiveState {
   updateArchive: (id: string, note: string, tags: string[]) => Promise<void>;
   compareArchives: (id1: string, id2: string) => Promise<void>;
   compareArchivesEnhanced: (id1: string, id2: string) => Promise<void>;
+  openExternalDiff: (id1: string, id2: string, toolPath?: string) => Promise<void>;
   clearEnhancedDiff: () => void;
   fetchTimeline: (filePath: string) => Promise<void>;
   fetchStatistics: () => Promise<void>;
@@ -362,6 +364,22 @@ export const useArchiveStore = create<ArchiveState>((set, get) => ({
       log.error('增强对比失败', msg);
       toast.error('对比失败', msg);
       set({ error: msg, loading: false });
+    }
+  },
+
+  openExternalDiff: async (id1: string, id2: string, toolPath?: string) => {
+    try {
+      await invoke('open_external_diff', {
+        id1,
+        id2,
+        toolPath: toolPath || null,
+      });
+      toast.success('外部对比已启动');
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      log.error('外部对比失败', msg);
+      toast.error('外部对比失败', msg);
+      set({ error: msg });
     }
   },
 
