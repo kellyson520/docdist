@@ -12,7 +12,7 @@ test.describe('追光 Lite', () => {
     await page.goto('/');
     
     // 检查导航项
-    await expect(page.getByText('存档管理')).toBeVisible();
+    await expect(page.getByRole('heading', { name: '存档管理' })).toBeVisible();
     await expect(page.getByText('时间轴')).toBeVisible();
     await expect(page.getByText('版本对比')).toBeVisible();
     await expect(page.getByText('迭代图谱')).toBeVisible();
