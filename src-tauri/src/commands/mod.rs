@@ -19,6 +19,45 @@ const MAX_LOG_FILE_SIZE_MB: u64 = 1024;
 const MAX_LOG_RETENTION_DAYS: u32 = 3650;
 const MAX_EXTERNAL_TOOL_LEN: usize = 4096;
 
+const ALLOWED_DIFF_TOOLS: &[&str] = &[
+    "meld",
+    "kdiff3",
+    "code",
+    "code-insiders",
+    "diffmerge",
+    "bcompare",
+    "Beyond Compare",
+    "tkdiff",
+    "xxdiff",
+    "kompare",
+    "diffuse",
+];
+
+/// Validate that the diff tool is either in the whitelist or an absolute path
+/// to an existing executable file.
+fn validate_diff_tool(tool: &std::ffi::OsStr) -> Result<(), AppError> {
+    let tool_path = std::path::Path::new(tool);
+    let tool_str = tool.to_string_lossy();
+
+    // Check if it's a known safe tool name (no path separators)
+    if !tool_str.contains('/')
+        && !tool_str.contains('\\')
+        && ALLOWED_DIFF_TOOLS.iter().any(|&t| t == tool_str.as_ref())
+    {
+        return Ok(());
+    }
+
+    // Check if it's an absolute path to an existing file
+    if tool_path.is_absolute() && tool_path.exists() {
+        return Ok(());
+    }
+
+    Err(AppError::Other(format!(
+        "外部对比工具 '{}' 不在允许列表中，且不是已存在的绝对路径",
+        tool_str
+    )))
+}
+
 fn validate_exclude_patterns(patterns: &[String]) -> Result<(), AppError> {
     if patterns.len() > MAX_EXCLUDE_PATTERNS {
         return Err(AppError::Other(format!(
@@ -330,6 +369,9 @@ pub async fn open_external_diff(
     state
         .service
         .restore_archive(&archive2.id, right_path.to_str())?;
+
+    // Validate tool against whitelist before execution
+    validate_diff_tool(&tool)?;
 
     std::process::Command::new(&tool)
         .arg(&left_path)

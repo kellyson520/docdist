@@ -34,8 +34,18 @@ impl PdfParser {
     /// 从文件路径解析 PDF
     #[allow(dead_code)]
     pub fn parse_pdf_file(&self, path: &str) -> Result<String, AppError> {
+        let canon = std::fs::canonicalize(path)
+            .map_err(|e| AppError::Other(format!("PDF 路径无效: {}", e)))?;
+
+        if !canon.exists() {
+            return Err(AppError::Other(format!(
+                "PDF 文件不存在: {}",
+                canon.display()
+            )));
+        }
+
         let output = Command::new("pdftotext")
-            .args([path, "-"])
+            .args([canon.as_os_str(), std::ffi::OsStr::new("-")])
             .output()
             .map_err(|e| AppError::Other(format!("PDF 解析失败: {}", e)))?;
 
