@@ -33,29 +33,46 @@ const ALLOWED_DIFF_TOOLS: &[&str] = &[
     "diffuse",
 ];
 
-/// Validate that the diff tool is either in the whitelist or an absolute path
-/// to an existing executable file.
+/// Validate that the diff tool is in the explicit whitelist.
+///
+/// SECURITY: Only tools in `ALLOWED_DIFF_TOOLS` are permitted. We no longer
+/// accept arbitrary absolute paths to existing executables, as that would
+/// allow an attacker who controls the config to execute ANY program.
 fn validate_diff_tool(tool: &std::ffi::OsStr) -> Result<(), AppError> {
-    let tool_path = std::path::Path::new(tool);
     let tool_str = tool.to_string_lossy();
 
-    // Check if it's a known safe tool name (no path separators)
-    if !tool_str.contains('/')
-        && !tool_str.contains('\\')
-        && ALLOWED_DIFF_TOOLS.iter().any(|&t| t == tool_str.as_ref())
-    {
-        return Ok(());
+    // Reject empty
+    if tool_str.trim().is_empty() {
+        return Err(AppError::Other("外部对比工具名称不能为空".to_string()));
     }
 
-    // Check if it's an absolute path to an existing file
-    if tool_path.is_absolute() && tool_path.exists() {
-        return Ok(());
+    // Reject shell metacharacters
+    let shell_dangerous = [
+        '|', '&', ';', '(', ')', '{', '}', '`', '$', '\n', '\r', '\0',
+    ];
+    if tool_str.chars().any(|c| shell_dangerous.contains(&c)) {
+        return Err(AppError::Other(format!(
+            "外部对比工具名称 '{}' 包含非法字符",
+            tool_str
+        )));
     }
 
-    Err(AppError::Other(format!(
-        "外部对比工具 '{}' 不在允许列表中，且不是已存在的绝对路径",
-        tool_str
-    )))
+    // Must be in the whitelist — no path separators allowed (only bare command names)
+    if tool_str.contains('/') || tool_str.contains('\\') {
+        return Err(AppError::Other(format!(
+            "外部对比工具 '{}' 不允许包含路径分隔符，请使用允许列表中的工具名",
+            tool_str
+        )));
+    }
+
+    if !ALLOWED_DIFF_TOOLS.iter().any(|&t| t == tool_str.as_ref()) {
+        return Err(AppError::Other(format!(
+            "外部对比工具 '{}' 不在允许列表中",
+            tool_str
+        )));
+    }
+
+    Ok(())
 }
 
 fn validate_exclude_patterns(patterns: &[String]) -> Result<(), AppError> {
@@ -140,6 +157,8 @@ fn validate_config(config: &AppConfig) -> Result<(), AppError> {
                 MAX_EXTERNAL_TOOL_LEN
             )));
         }
+        // SECURITY: Validate external diff tool against whitelist at config save time
+        validate_diff_tool(tool.as_os_str())?;
     }
     Ok(())
 }
@@ -212,7 +231,10 @@ fn configured_external_diff_tool(
                     MAX_EXTERNAL_TOOL_LEN
                 )));
             }
-            return Ok(std::ffi::OsString::from(trimmed));
+            // SECURITY: Validate override tool against whitelist
+            let os_tool = std::ffi::OsString::from(trimmed);
+            validate_diff_tool(&os_tool)?;
+            return Ok(os_tool);
         }
     }
 
@@ -229,6 +251,11 @@ fn configured_external_diff_tool(
         })
         .ok_or_else(|| {
             AppError::Other("请先在设置中配置外部对比工具路径".to_string())
+        })
+        .and_then(|tool| {
+            // SECURITY: Also validate config-based tool against whitelist
+            validate_diff_tool(&tool)?;
+            Ok(tool)
         })
 }
 
@@ -774,7 +801,7 @@ pub async fn export_history(
     let archives = if let Some(ref fp) = file_path {
         db::get_archives_by_file_path(state.service.db(), fp)?
     } else {
-        db::get_all_archives(state.service.db(), None, None)?
+        db::get_all_archives(state.service.db(), None, None, None, None)?
     };
 
     if archives.is_empty() {
@@ -909,5 +936,122 @@ mod tests {
         let result = configured_external_diff_tool(&config, Some(tool));
 
         assert!(result.is_err());
+    }
+
+    // ── Security: validate_diff_tool tests ─────────────────────────────
+
+    #[test]
+    fn test_validate_diff_tool_accepts_meld() {
+        let result = validate_diff_tool(std::ffi::OsStr::new("meld"));
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_diff_tool_accepts_all_whitelist_tools() {
+        for &tool_name in ALLOWED_DIFF_TOOLS {
+            let result = validate_diff_tool(std::ffi::OsStr::new(tool_name));
+            assert!(
+                result.is_ok(),
+                "Whitelist tool '{}' should be accepted",
+                tool_name
+            );
+        }
+    }
+
+    #[test]
+    fn test_validate_diff_tool_rejects_arbitrary_path() {
+        let result = validate_diff_tool(std::ffi::OsStr::new("/usr/bin/rm"));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("路径分隔符"));
+    }
+
+    #[test]
+    fn test_validate_diff_tool_rejects_arbitrary_command() {
+        let result = validate_diff_tool(std::ffi::OsStr::new("curl"));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("不在允许列表中"));
+    }
+
+    #[test]
+    fn test_validate_diff_tool_rejects_empty() {
+        let result = validate_diff_tool(std::ffi::OsStr::new(""));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("不能为空"));
+    }
+
+    #[test]
+    fn test_validate_diff_tool_rejects_shell_metacharacters() {
+        for evil in &[
+            "meld|bash",
+            "meld;rm -rf /",
+            "meld&evil",
+            "meld$(whoami)",
+            "meld`id`",
+        ] {
+            let result = validate_diff_tool(std::ffi::OsStr::new(evil));
+            assert!(
+                result.is_err(),
+                "Should reject shell metacharacters in: {}",
+                evil
+            );
+        }
+    }
+
+    #[test]
+    fn test_validate_diff_tool_rejects_null_byte() {
+        let result = validate_diff_tool(std::ffi::OsStr::new("meld\0evil"));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("非法字符"));
+    }
+
+    #[test]
+    fn test_configured_external_diff_tool_rejects_arbitrary_override() {
+        let config = AppConfig::default();
+        let result = configured_external_diff_tool(
+            &config,
+            Some("/usr/bin/bash".to_string()),
+        );
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("路径分隔符"));
+    }
+
+    #[test]
+    fn test_configured_external_diff_tool_rejects_unlisted_override() {
+        let config = AppConfig::default();
+        let result = configured_external_diff_tool(
+            &config,
+            Some("malicious_program".to_string()),
+        );
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("不在允许列表中"));
+    }
+
+    #[test]
+    fn test_validate_config_rejects_unlisted_diff_tool() {
+        let mut config = AppConfig::default();
+        config.external_diff_tool = Some(PathBuf::from("/usr/bin/curl"));
+
+        let result = validate_config(&config);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("路径分隔符"));
+    }
+
+    #[test]
+    fn test_validate_config_rejects_unknown_tool_name() {
+        let mut config = AppConfig::default();
+        config.external_diff_tool = Some(PathBuf::from("eviltool"));
+
+        let result = validate_config(&config);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("不在允许列表中"));
+    }
+
+    #[test]
+    fn test_validate_config_accepts_whitelist_tool() {
+        let mut config = AppConfig::default();
+        config.external_diff_tool = Some(PathBuf::from("meld"));
+
+        let result = validate_config(&config);
+        assert!(result.is_ok());
     }
 }

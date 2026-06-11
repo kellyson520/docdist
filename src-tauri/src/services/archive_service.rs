@@ -664,7 +664,8 @@ impl ArchiveService {
         &self,
         file_path: Option<&str>,
     ) -> Result<Vec<Archive>, AppError> {
-        let all = db::get_all_archives(&self.pool, file_path, None)?;
+        let all =
+            db::get_all_archives(&self.pool, file_path, None, None, None)?;
         Ok(build_archive_tree_order(all))
     }
 

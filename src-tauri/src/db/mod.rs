@@ -96,7 +96,7 @@ pub fn init_database(
     Ok(pool)
 }
 
-#[allow(dead_code)]
+#[cfg(test)]
 pub fn insert_archive(
     pool: &DbPool,
     archive: &Archive,
@@ -125,7 +125,7 @@ pub fn insert_archive(
     Ok(())
 }
 
-#[allow(dead_code)]
+#[cfg(test)]
 pub fn insert_archive_chunks(
     pool: &DbPool,
     archive_id: &str,
@@ -213,11 +213,15 @@ pub fn get_archives(
     Ok(archives)
 }
 
-/// 获取所有存档（无 LIMIT，用于树视图等需要完整数据的场景）
+/// 获取所有存档（带 LIMIT/OFFSET 分页支持，防止 OOM）
+///
+/// `limit` 默认硬上限 10000，`offset` 默认 0。
 pub fn get_all_archives(
     pool: &DbPool,
     file_path: Option<&str>,
     search: Option<&str>,
+    limit: Option<usize>,
+    offset: Option<usize>,
 ) -> Result<Vec<Archive>, crate::error::AppError> {
     let conn = pool.get()?;
     let mut sql = format!("SELECT {} FROM archives WHERE 1=1", SELECT_FIELDS);
@@ -246,6 +250,14 @@ pub fn get_all_archives(
     }
     sql.push_str(" ORDER BY created_at DESC");
 
+    // 硬上限防止 OOM，允许调用方指定更小的 limit
+    let effective_limit = limit.unwrap_or(10_000).min(10_000);
+    let effective_offset = offset.unwrap_or(0);
+    sql.push_str(&format!(
+        " LIMIT {} OFFSET {}",
+        effective_limit, effective_offset
+    ));
+
     let mut stmt = conn.prepare(&sql)?;
     let params_refs: Vec<&dyn rusqlite::types::ToSql> =
         param_values.iter().map(|p| p.as_ref()).collect();
@@ -263,8 +275,9 @@ pub fn get_all_archives(
 }
 
 /// 一次性加载所有存档并按 parent_id 分组（用于树构建，避免 N+1 查询）
-#[allow(dead_code)]
-pub fn get_all_archives_grouped_by_parent(
+/// 硬上限 10000 条防止 OOM。仅测试使用。
+#[cfg(test)]
+pub fn get_all_archives_grouped_by_parent_test(
     pool: &DbPool,
 ) -> Result<
     std::collections::HashMap<String, Vec<Archive>>,
@@ -306,7 +319,7 @@ pub fn get_archive(
     }
 }
 
-#[allow(dead_code)]
+#[cfg(test)]
 pub fn delete_archive(
     pool: &DbPool,
     id: &str,
@@ -517,7 +530,7 @@ pub fn get_archives_paginated(
 }
 
 /// 批量删除存档
-#[allow(dead_code)]
+#[cfg(test)]
 pub fn delete_archives_batch(
     pool: &DbPool,
     ids: &[String],
@@ -538,7 +551,7 @@ pub fn delete_archives_batch(
 }
 
 /// 获取存储统计
-#[allow(dead_code)]
+#[cfg(test)]
 pub fn get_storage_stats(
     pool: &DbPool,
 ) -> Result<serde_json::Value, crate::error::AppError> {
@@ -566,7 +579,7 @@ pub fn get_storage_stats(
 }
 
 /// 插入或更新 chunk（upsert，增加 ref_count）
-#[allow(dead_code)]
+#[cfg(test)]
 pub fn upsert_chunk(
     pool: &DbPool,
     hash: &str,
@@ -590,7 +603,7 @@ pub fn upsert_chunk(
 }
 
 /// 减少 chunk 引用计数，如果归零则标记可清理
-#[allow(dead_code)]
+#[cfg(test)]
 pub fn decrement_chunk_ref(
     pool: &DbPool,
     hash: &str,
@@ -604,7 +617,7 @@ pub fn decrement_chunk_ref(
 }
 
 /// 删除存档的 chunks 关联记录
-#[allow(dead_code)]
+#[cfg(test)]
 pub fn delete_archive_chunks(
     pool: &DbPool,
     archive_id: &str,
@@ -618,7 +631,7 @@ pub fn delete_archive_chunks(
 }
 
 /// 删除存档记录本身
-#[allow(dead_code)]
+#[cfg(test)]
 pub fn delete_archive_record(
     pool: &DbPool,
     id: &str,
@@ -648,7 +661,7 @@ pub fn get_all_chunk_hashes(
 }
 
 /// 获取所有不被引用的 chunks（ref_count = 0）
-#[allow(dead_code)]
+#[cfg(test)]
 pub fn get_unreferenced_chunks(
     pool: &DbPool,
 ) -> Result<Vec<String>, crate::error::AppError> {
@@ -668,7 +681,7 @@ pub fn get_unreferenced_chunks(
 }
 
 /// 获取指定存档的详细信息（含 chunks）
-#[allow(dead_code)]
+#[cfg(test)]
 pub fn get_archive_detail(
     pool: &DbPool,
     id: &str,
@@ -706,7 +719,6 @@ pub fn get_archive_detail(
     Ok(Some((archive, chunks)))
 }
 /// 标记一个存档为重要版本
-#[allow(dead_code)]
 pub fn star_archive(
     pool: &DbPool,
     archive_id: &str,
@@ -723,7 +735,6 @@ pub fn star_archive(
 }
 
 /// 取消标记
-#[allow(dead_code)]
 pub fn unstar_archive(
     pool: &DbPool,
     archive_id: &str,
@@ -737,7 +748,6 @@ pub fn unstar_archive(
 }
 
 /// 获取所有标记的版本
-#[allow(dead_code)]
 pub fn get_starred_archives(
     pool: &DbPool,
 ) -> Result<Vec<(Archive, String, String)>, crate::error::AppError> {
@@ -769,7 +779,6 @@ pub fn get_starred_archives(
 }
 
 /// 按路径模式搜索存档（支持前缀匹配）
-#[allow(dead_code)]
 pub fn get_archives_by_path_pattern(
     pool: &DbPool,
     pattern: &str,
@@ -799,7 +808,7 @@ pub fn get_archives_by_path_pattern(
 }
 
 /// 检查存档是否已被标记
-#[allow(dead_code)]
+#[cfg(test)]
 pub fn is_archived_starred(
     pool: &DbPool,
     archive_id: &str,
@@ -814,7 +823,6 @@ pub fn is_archived_starred(
 }
 
 /// 按精确文件路径查询存档
-#[allow(dead_code)]
 pub fn get_archives_by_file_path(
     pool: &DbPool,
     file_path: &str,
@@ -837,7 +845,6 @@ pub fn get_archives_by_file_path(
 }
 
 /// 按目录路径和时间点查询存档（目录前缀匹配 + 时间过滤）
-#[allow(dead_code)]
 pub fn get_archives_by_dir_before(
     pool: &DbPool,
     dir_path: &str,
@@ -869,7 +876,6 @@ pub fn get_archives_by_dir_before(
 }
 
 /// 获取指定存档的 chunk hash 列表
-#[allow(dead_code)]
 pub fn get_archive_chunk_hashes(
     pool: &DbPool,
     archive_id: &str,
@@ -2253,7 +2259,7 @@ mod tests {
         orphan.parent_id = None;
         insert_archive(&pool, &orphan).unwrap();
 
-        let grouped = get_all_archives_grouped_by_parent(&pool).unwrap();
+        let grouped = get_all_archives_grouped_by_parent_test(&pool).unwrap();
 
         // parent_id=None 的应归入 "" 键
         let roots = grouped.get("").unwrap();
