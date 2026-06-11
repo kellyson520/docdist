@@ -33,11 +33,47 @@ const ALLOWED_DIFF_TOOLS: &[&str] = &[
     "diffuse",
 ];
 
+/// Directories where absolute-path diff tools are allowed to reside.
+/// Only tools in these directories may be used when not in the whitelist.
+const ALLOWED_TOOL_DIRS: &[&str] = &[
+    "/usr/bin",
+    "/usr/local/bin",
+    "/usr/sbin",
+    "/opt",
+    "/snap/bin",
+    "/Applications", // macOS
+];
+
 /// Validate that the diff tool is either in the whitelist or an absolute path
-/// to an existing executable file.
+/// in an allowed directory to an existing executable file.
+///
+/// Security: This prevents arbitrary program execution by restricting
+/// external tools to a known whitelist or tools installed in standard
+/// system directories.
 fn validate_diff_tool(tool: &std::ffi::OsStr) -> Result<(), AppError> {
     let tool_path = std::path::Path::new(tool);
     let tool_str = tool.to_string_lossy();
+
+    // Reject null bytes
+    if tool_str.contains('\0') {
+        return Err(AppError::Other(
+            "外部对比工具路径包含非法空字节".to_string(),
+        ));
+    }
+
+    // Reject shell metacharacters
+    if tool_str.contains(';')
+        || tool_str.contains('|')
+        || tool_str.contains('&')
+        || tool_str.contains('$')
+        || tool_str.contains('`')
+        || tool_str.contains('\n')
+        || tool_str.contains('\r')
+    {
+        return Err(AppError::Other(
+            "外部对比工具路径包含非法字符".to_string(),
+        ));
+    }
 
     // Check if it's a known safe tool name (no path separators)
     if !tool_str.contains('/')
@@ -47,13 +83,43 @@ fn validate_diff_tool(tool: &std::ffi::OsStr) -> Result<(), AppError> {
         return Ok(());
     }
 
-    // Check if it's an absolute path to an existing file
+    // For absolute paths: require the tool to exist AND reside in an allowed directory
     if tool_path.is_absolute() && tool_path.exists() {
+        // Canonicalize to prevent path traversal via ../
+        let canon = std::fs::canonicalize(tool_path).map_err(|e| {
+            AppError::Other(format!("工具路径解析失败: {}", e))
+        })?;
+
+        // Check that the canonicalized path is in an allowed directory
+        let canon_str = canon.to_string_lossy();
+        let in_allowed_dir = ALLOWED_TOOL_DIRS.iter().any(|dir| {
+            canon_str.starts_with(dir)
+                && canon_str.as_bytes().get(dir.len()) == Some(&b'/')
+        });
+
+        if !in_allowed_dir {
+            return Err(AppError::Other(format!(
+                "外部对比工具 '{}' 不在允许的目录中 (允许: {:?})",
+                canon.display(),
+                ALLOWED_TOOL_DIRS
+            )));
+        }
+
+        // Verify it's a regular file (not a device, socket, etc.)
+        let metadata = std::fs::metadata(&canon).map_err(|e| {
+            AppError::Other(format!("无法读取工具元数据: {}", e))
+        })?;
+        if !metadata.is_file() {
+            return Err(AppError::Other(
+                "外部对比工具路径不是普通文件".to_string(),
+            ));
+        }
+
         return Ok(());
     }
 
     Err(AppError::Other(format!(
-        "外部对比工具 '{}' 不在允许列表中，且不是已存在的绝对路径",
+        "外部对比工具 '{}' 不在允许列表中，且不是允许目录中的绝对路径",
         tool_str
     )))
 }
@@ -343,6 +409,9 @@ pub async fn open_external_diff(
         configured_external_diff_tool(&config, tool_path)?
     };
 
+    // Validate tool against whitelist/directory restrictions BEFORE any use
+    validate_diff_tool(&tool)?;
+
     let archive1 = db::get_archive(state.service.db(), &id1)?
         .ok_or_else(|| AppError::Other("存档1不存在".to_string()))?;
     let archive2 = db::get_archive(state.service.db(), &id2)?
@@ -369,9 +438,6 @@ pub async fn open_external_diff(
     state
         .service
         .restore_archive(&archive2.id, right_path.to_str())?;
-
-    // Validate tool against whitelist before execution
-    validate_diff_tool(&tool)?;
 
     std::process::Command::new(&tool)
         .arg(&left_path)
@@ -843,6 +909,7 @@ pub async fn export_history(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::ffi::OsStr;
 
     #[test]
     fn test_safe_archive_entry_name_prevents_zip_slip() {
@@ -909,5 +976,86 @@ mod tests {
         let result = configured_external_diff_tool(&config, Some(tool));
 
         assert!(result.is_err());
+    }
+
+    // ── Security tests for diff tool validation ─────────────────────
+
+    #[test]
+    fn test_validate_diff_tool_whitelist_meld() {
+        assert!(validate_diff_tool(OsStr::new("meld")).is_ok());
+    }
+
+    #[test]
+    fn test_validate_diff_tool_whitelist_kdiff3() {
+        assert!(validate_diff_tool(OsStr::new("kdiff3")).is_ok());
+    }
+
+    #[test]
+    fn test_validate_diff_tool_whitelist_vscode() {
+        assert!(validate_diff_tool(OsStr::new("code")).is_ok());
+    }
+
+    #[test]
+    fn test_validate_diff_tool_rejects_unknown_name() {
+        assert!(validate_diff_tool(OsStr::new("evil-tool")).is_err());
+    }
+
+    #[test]
+    fn test_validate_diff_tool_rejects_null_bytes() {
+        assert!(
+            validate_diff_tool(OsStr::new("meld\0; rm -rf /")).is_err()
+        );
+    }
+
+    #[test]
+    fn test_validate_diff_tool_rejects_shell_metacharacters() {
+        assert!(validate_diff_tool(OsStr::new("meld; evil")).is_err());
+        assert!(validate_diff_tool(OsStr::new("meld|evil")).is_err());
+        assert!(validate_diff_tool(OsStr::new("meld&evil")).is_err());
+        assert!(validate_diff_tool(OsStr::new("meld$evil")).is_err());
+        assert!(validate_diff_tool(OsStr::new("meld`evil`")).is_err());
+    }
+
+    #[test]
+    fn test_validate_diff_tool_rejects_unrestricted_absolute_path() {
+        // /bin/sh exists but is not in an allowed tool directory
+        // (it's in /bin, not in ALLOWED_TOOL_DIRS)
+        let result = validate_diff_tool(OsStr::new("/bin/sh"));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_validate_diff_tool_rejects_dev_null() {
+        // /dev/null exists but is not a regular file in an allowed dir
+        let result = validate_diff_tool(OsStr::new("/dev/null"));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_validate_diff_tool_rejects_nonexistent_absolute_path() {
+        let result =
+            validate_diff_tool(OsStr::new("/nonexistent/tool/bin/meld"));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_validate_exclude_patterns_valid() {
+        assert!(validate_exclude_patterns(&[
+            "*.tmp".to_string(),
+            "*.log".to_string()
+        ])
+        .is_ok());
+    }
+
+    #[test]
+    fn test_validate_exclude_patterns_empty_pattern() {
+        assert!(validate_exclude_patterns(&["".to_string()]).is_err());
+    }
+
+    #[test]
+    fn test_validate_exclude_patterns_too_many() {
+        let patterns: Vec<String> =
+            (0..200).map(|i| format!("pattern_{}", i)).collect();
+        assert!(validate_exclude_patterns(&patterns).is_err());
     }
 }
