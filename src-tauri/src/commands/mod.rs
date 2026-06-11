@@ -1015,9 +1015,8 @@ mod tests {
 
     #[test]
     fn test_validate_diff_tool_rejects_unrestricted_absolute_path() {
-        // /bin/sh exists but is not in an allowed tool directory
-        // (it's in /bin, not in ALLOWED_TOOL_DIRS)
-        let result = validate_diff_tool(OsStr::new("/bin/sh"));
+        // /tmp/evil-tool is not in any ALLOWED_TOOL_DIRS
+        let result = validate_diff_tool(OsStr::new("/tmp/evil-tool"));
         assert!(result.is_err());
     }
 
