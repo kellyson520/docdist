@@ -42,9 +42,7 @@ impl FileParser for PdfParser {
 fn validate_pdf_path(path: &str) -> Result<std::path::PathBuf, AppError> {
     // Reject null bytes — these can truncate C strings and bypass checks
     if path.contains('\0') {
-        return Err(AppError::Other(
-            "PDF 路径包含非法空字节".to_string(),
-        ));
+        return Err(AppError::Other("PDF 路径包含非法空字节".to_string()));
     }
 
     // Reject paths with shell metacharacters that could cause injection
@@ -61,9 +59,7 @@ fn validate_pdf_path(path: &str) -> Result<std::path::PathBuf, AppError> {
         || path.contains('\n')
         || path.contains('\r')
     {
-        return Err(AppError::Other(
-            "PDF 路径包含非法字符".to_string(),
-        ));
+        return Err(AppError::Other("PDF 路径包含非法字符".to_string()));
     }
 
     // Reject empty or whitespace-only paths
@@ -77,10 +73,7 @@ fn validate_pdf_path(path: &str) -> Result<std::path::PathBuf, AppError> {
         .and_then(|e| e.to_str())
         .unwrap_or("");
     if ext.to_lowercase() != "pdf" {
-        return Err(AppError::Other(format!(
-            "非 PDF 文件扩展名: .{}",
-            ext
-        )));
+        return Err(AppError::Other(format!("非 PDF 文件扩展名: .{}", ext)));
     }
 
     // Canonicalize to resolve symlinks and relative components
@@ -89,10 +82,7 @@ fn validate_pdf_path(path: &str) -> Result<std::path::PathBuf, AppError> {
 
     // Ensure canonicalized path still has .pdf extension
     // (canonicalize may reveal a different file)
-    let canon_ext = canon
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("");
+    let canon_ext = canon.extension().and_then(|e| e.to_str()).unwrap_or("");
     if canon_ext.to_lowercase() != "pdf" {
         return Err(AppError::Other(
             "canonicalized 路径不是 PDF 文件".to_string(),
@@ -103,9 +93,7 @@ fn validate_pdf_path(path: &str) -> Result<std::path::PathBuf, AppError> {
     let metadata = std::fs::metadata(&canon)
         .map_err(|e| AppError::Other(format!("PDF 文件无法读取: {}", e)))?;
     if !metadata.is_file() {
-        return Err(AppError::Other(
-            "PDF 路径不是普通文件".to_string(),
-        ));
+        return Err(AppError::Other("PDF 路径不是普通文件".to_string()));
     }
 
     Ok(canon)
@@ -171,12 +159,7 @@ mod tests {
     fn test_validate_pdf_path_rejects_null_bytes() {
         let result = validate_pdf_path("document\0.pdf");
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("空字节"),
-        );
+        assert!(result.unwrap_err().to_string().contains("空字节"),);
     }
 
     #[test]
@@ -192,11 +175,7 @@ mod tests {
             "doc\nevil.pdf",
         ] {
             let result = validate_pdf_path(evil);
-            assert!(
-                result.is_err(),
-                "Expected rejection for path: {:?}",
-                evil
-            );
+            assert!(result.is_err(), "Expected rejection for path: {:?}", evil);
         }
     }
 
@@ -228,9 +207,7 @@ mod tests {
         std::fs::create_dir(&pdf_dir).unwrap();
         let result = validate_pdf_path(pdf_dir.to_str().unwrap());
         assert!(result.is_err());
-        assert!(
-            result.unwrap_err().to_string().contains("不是普通文件"),
-        );
+        assert!(result.unwrap_err().to_string().contains("不是普通文件"),);
     }
 
     #[test]
