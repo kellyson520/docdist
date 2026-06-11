@@ -86,9 +86,8 @@ fn validate_diff_tool(tool: &std::ffi::OsStr) -> Result<(), AppError> {
     // For absolute paths: require the tool to exist AND reside in an allowed directory
     if tool_path.is_absolute() && tool_path.exists() {
         // Canonicalize to prevent path traversal via ../
-        let canon = std::fs::canonicalize(tool_path).map_err(|e| {
-            AppError::Other(format!("工具路径解析失败: {}", e))
-        })?;
+        let canon = std::fs::canonicalize(tool_path)
+            .map_err(|e| AppError::Other(format!("工具路径解析失败: {}", e)))?;
 
         // Check that the canonicalized path is in an allowed directory
         let canon_str = canon.to_string_lossy();
@@ -1002,9 +1001,7 @@ mod tests {
 
     #[test]
     fn test_validate_diff_tool_rejects_null_bytes() {
-        assert!(
-            validate_diff_tool(OsStr::new("meld\0; rm -rf /")).is_err()
-        );
+        assert!(validate_diff_tool(OsStr::new("meld\0; rm -rf /")).is_err());
     }
 
     #[test]
