@@ -3,6 +3,12 @@ use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
 
+// NOTE: Several functions in this module are marked #[allow(dead_code)] because
+// they are public API functions called from the Tauri frontend via FFI (invoke_handler).
+// The Rust compiler cannot see these cross-language calls and reports them as unused.
+// If a function is genuinely unused (not called from frontend or tests), it should be
+// removed rather than suppressed. See audit issue #11.
+
 pub type DbPool = Pool<SqliteConnectionManager>;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -213,7 +219,10 @@ pub fn get_archives(
     Ok(archives)
 }
 
-/// 获取所有存档（无 LIMIT，用于树视图等需要完整数据的场景）
+/// 安全上限：防止无限制查询导致内存/性能问题
+const MAX_ARCHIVES_LIMIT: usize = 10_000;
+
+/// 获取所有存档（带安全 LIMIT，防止无限制查询）
 pub fn get_all_archives(
     pool: &DbPool,
     file_path: Option<&str>,
@@ -244,7 +253,8 @@ pub fn get_all_archives(
             param_values.push(Box::new(pattern));
         }
     }
-    sql.push_str(" ORDER BY created_at DESC");
+    sql.push_str(" ORDER BY created_at DESC LIMIT ?");
+    param_values.push(Box::new(MAX_ARCHIVES_LIMIT as i64));
 
     let mut stmt = conn.prepare(&sql)?;
     let params_refs: Vec<&dyn rusqlite::types::ToSql> =
