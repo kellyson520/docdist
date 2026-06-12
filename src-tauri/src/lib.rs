@@ -117,8 +117,14 @@ pub fn run() {
 
     // 初始化数据库
     let db_path = data_dir.join("data.db");
-    let pool =
-        db::init_database(&db_path).expect("Failed to initialize database");
+    let pool = match db::init_database(&db_path) {
+        Ok(p) => p,
+        Err(e) => {
+            tracing::error!("数据库初始化失败: {:?} — {}", db_path, e);
+            eprintln!("数据库初始化失败: {:?}\n{}", db_path, e);
+            return;
+        }
+    };
     tracing::info!("数据库初始化完成: {:?}", db_path);
 
     // 初始化服务（chunk_size 从配置读取）
