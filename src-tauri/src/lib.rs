@@ -47,31 +47,45 @@ fn init_logging(data_dir: &std::path::Path, log_config: &config::LogConfig) {
         .with_line_number(true);
 
     if log_config.file_output {
-        // 文件输出层
-        let log_file_std = std::fs::OpenOptions::new()
+        match std::fs::OpenOptions::new()
             .create(true)
             .append(true)
             .open(&log_file)
-            .expect("Failed to open log file");
+        {
+            Ok(log_file_std) => {
+                let file_layer = fmt::layer()
+                    .with_target(true)
+                    .with_file(true)
+                    .with_line_number(true)
+                    .with_ansi(false)
+                    .with_writer(log_file_std);
 
-        let file_layer = fmt::layer()
-            .with_target(true)
-            .with_file(true)
-            .with_line_number(true)
-            .with_ansi(false)
-            .with_writer(log_file_std);
+                tracing_subscriber::registry()
+                    .with(level)
+                    .with(console_layer)
+                    .with(file_layer)
+                    .init();
 
-        tracing_subscriber::registry()
-            .with(level)
-            .with(console_layer)
-            .with(file_layer)
-            .init();
+                tracing::info!(
+                    "日志系统初始化完成 (级别: {}, 文件: {})",
+                    log_config.level,
+                    log_file.display()
+                );
+            }
+            Err(e) => {
+                // 日志文件打不开，降级为仅 stdout，避免 panic
+                tracing_subscriber::registry()
+                    .with(level)
+                    .with(console_layer)
+                    .init();
 
-        tracing::info!(
-            "日志系统初始化完成 (级别: {}, 文件: {})",
-            log_config.level,
-            log_file.display()
-        );
+                tracing::warn!(
+                    "无法打开日志文件 {}: {}，降级为仅控制台输出",
+                    log_file.display(),
+                    e
+                );
+            }
+        }
     } else {
         tracing_subscriber::registry()
             .with(level)
