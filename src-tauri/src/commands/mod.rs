@@ -396,6 +396,25 @@ pub async fn compare_archives_enhanced(
     state.service.compare_archives_enhanced(&id1, &id2)
 }
 
+/// 清理超过1小时的历史临时对比目录，避免磁盘泄漏
+fn cleanup_stale_diff_temp_dirs() {
+    let diff_root = std::env::temp_dir().join("docdist-external-diff");
+    let Ok(entries) = std::fs::read_dir(&diff_root) else {
+        return;
+    };
+    let one_hour_ago =
+        std::time::SystemTime::now() - std::time::Duration::from_secs(3600);
+    for entry in entries.flatten() {
+        if let Ok(meta) = entry.metadata() {
+            if let Ok(created) = meta.created() {
+                if created < one_hour_ago {
+                    let _ = std::fs::remove_dir_all(entry.path());
+                }
+            }
+        }
+    }
+}
+
 #[tauri::command]
 pub async fn open_external_diff(
     state: State<'_, AppState>,
@@ -438,18 +457,30 @@ pub async fn open_external_diff(
         .service
         .restore_archive(&archive2.id, right_path.to_str())?;
 
+    // 清理历史遗留的临时目录（超过1小时的）
+    cleanup_stale_diff_temp_dirs();
+
     std::process::Command::new(&tool)
         .arg(&left_path)
         .arg(&right_path)
         .current_dir(&temp_dir)
         .spawn()
         .map_err(|e| {
+            // 启动失败时立即清理本次临时目录
+            let _ = std::fs::remove_dir_all(&temp_dir);
             AppError::Other(format!(
                 "启动外部对比工具失败: {} ({})",
                 std::path::PathBuf::from(&tool).display(),
                 e
             ))
         })?;
+
+    // 延迟清理本次临时目录（1小时后），避免外部工具还在使用
+    let cleanup_path = temp_dir.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_secs(3600));
+        let _ = std::fs::remove_dir_all(&cleanup_path);
+    });
 
     Ok(serde_json::json!({
         "tool": std::path::PathBuf::from(&tool).to_string_lossy(),
