@@ -43,8 +43,11 @@ pub fn store_file(
         ));
     }
 
-    let mut file = std::io::BufReader::new(std::fs::File::open(file_path)?);
-    let mut read_buffer = [0u8; 64 * 1024];
+    let mut file = std::io::BufReader::with_capacity(
+        256 * 1024,
+        std::fs::File::open(file_path)?,
+    );
+    let mut read_buffer = [0u8; 256 * 1024];
     let bounds = chunk_bounds(chunk_size);
     let mut chunk = Vec::with_capacity(bounds.target);
     let mut chunk_hashes = Vec::new();
@@ -52,8 +55,9 @@ pub fn store_file(
     let mut file_hasher = blake3::Hasher::new();
     let mut file_size: u64 = 0;
     let mut rolling_hash = 0u64;
-    let mut rolling_window =
-        std::collections::VecDeque::with_capacity(CDC_ROLLING_WINDOW_SIZE);
+    let mut ring_buf = [0u8; CDC_ROLLING_WINDOW_SIZE];
+    let mut ring_idx: usize = 0;
+    let mut ring_len: usize = 0;
 
     loop {
         let n = file.read(&mut read_buffer)?;
@@ -62,20 +66,33 @@ pub fn store_file(
         }
 
         file_hasher.update(&read_buffer[..n]);
-        // TODO(perf): 逐字节处理在大文件上存在性能瓶颈。
-        // 每个字节都需要调用 update_rolling_hash + should_cut_chunk，
-        // 函数调用开销在热路径上累积显著。
-        // 优化方向：
-        //   1. 将滚动窗口计算改为 SIMD 批量处理
-        //   2. 预扫描 read_buffer 寻找 chunk 边界，避免逐字节函数调用
-        //   3. 使用 unsafe 直接索引避免 bounds check
         for &byte in &read_buffer[..n] {
             file_size += 1;
             chunk.push(byte);
-            rolling_hash =
-                update_rolling_hash(rolling_hash, byte, &mut rolling_window);
 
-            if should_cut_chunk(chunk.len(), rolling_hash, bounds) {
+            let outgoing = if ring_len == CDC_ROLLING_WINDOW_SIZE {
+                let old = ring_buf[ring_idx];
+                ring_buf[ring_idx] = byte;
+                ring_idx = (ring_idx + 1) % CDC_ROLLING_WINDOW_SIZE;
+                Some(old)
+            } else {
+                ring_buf[ring_len] = byte;
+                ring_len += 1;
+                None
+            };
+
+            if let Some(out) = outgoing {
+                rolling_hash = rolling_hash
+                    .wrapping_sub(rolling_gear(out))
+                    .wrapping_add(rolling_gear(byte));
+            } else {
+                rolling_hash = rolling_hash.wrapping_add(rolling_gear(byte));
+            }
+
+            let len = chunk.len();
+            if len >= bounds.max
+                || (len >= bounds.min && (rolling_hash & bounds.mask) == 0)
+            {
                 persist_chunk(
                     base_dir,
                     &chunk,
@@ -84,7 +101,8 @@ pub fn store_file(
                 )?;
                 chunk.clear();
                 rolling_hash = 0;
-                rolling_window.clear();
+                ring_idx = 0;
+                ring_len = 0;
             }
         }
     }
@@ -125,34 +143,6 @@ fn rolling_gear(byte: u8) -> u64 {
         .wrapping_add(1)
         .wrapping_mul(0x9e37_79b1_85eb_ca87)
         .rotate_left((byte & 31) as u32)
-}
-
-fn update_rolling_hash(
-    current: u64,
-    byte: u8,
-    window: &mut std::collections::VecDeque<u8>,
-) -> u64 {
-    let outgoing = if window.len() == CDC_ROLLING_WINDOW_SIZE {
-        window.pop_front()
-    } else {
-        None
-    };
-    window.push_back(byte);
-
-    let mut next = current;
-    if let Some(outgoing) = outgoing {
-        next = next.wrapping_sub(rolling_gear(outgoing));
-    }
-    next.wrapping_add(rolling_gear(byte))
-}
-
-fn should_cut_chunk(
-    len: usize,
-    rolling_hash: u64,
-    bounds: ChunkBounds,
-) -> bool {
-    len >= bounds.max
-        || (len >= bounds.min && (rolling_hash & bounds.mask) == 0)
 }
 
 fn persist_chunk(
