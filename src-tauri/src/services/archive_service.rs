@@ -4,7 +4,9 @@ use crate::diff::types::*;
 use crate::diff::DiffStats as DiffResultStats;
 use crate::error::AppError;
 use crate::storage;
+use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
+use std::io::Read;
 use std::path::{Component, Path};
 
 /// 检测并转换文本编码（支持 UTF-8、GBK/GB2312）
@@ -17,6 +19,67 @@ fn detect_and_convert_encoding(content: &[u8]) -> String {
     // 使用 encoding_rs 进行 GBK 解码（覆盖 GB2312/GBK/GB18030）
     let (decoded, _encoding, _had_errors) = encoding_rs::GBK.decode(content);
     decoded.to_string()
+}
+
+/// 流式读取 chunks 的 reader，每次只加载一个 chunk 文件到内存
+/// 避免将整个文件的所有 chunks 一次性加载到内存中
+struct ChunksReader<'a> {
+    chunks_dir: &'a Path,
+    chunk_hashes: &'a [String],
+    current_index: usize,
+    current_reader: Option<std::io::BufReader<std::fs::File>>,
+}
+
+impl<'a> ChunksReader<'a> {
+    fn new(chunks_dir: &'a Path, chunk_hashes: &'a [String]) -> Self {
+        Self {
+            chunks_dir,
+            chunk_hashes,
+            current_index: 0,
+            current_reader: None,
+        }
+    }
+}
+
+impl<'a> Read for ChunksReader<'a> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        loop {
+            // 尝试从当前 chunk reader 读取
+            if let Some(ref mut reader) = self.current_reader {
+                let n = reader.read(buf)?;
+                if n > 0 {
+                    return Ok(n);
+                }
+                // 当前 chunk 已读完，继续下一个
+                self.current_reader = None;
+            }
+
+            // 所有 chunks 已读完
+            if self.current_index >= self.chunk_hashes.len() {
+                return Ok(0);
+            }
+
+            // 打开下一个 chunk 文件
+            let hash = &self.chunk_hashes[self.current_index];
+            self.current_index += 1;
+
+            if hash.len() < 2 {
+                tracing::warn!("Skipping chunk with invalid hash: {}", hash);
+                continue;
+            }
+
+            let chunk_path = self.chunks_dir.join(&hash[..2]).join(hash);
+            if chunk_path.exists() {
+                let file = std::fs::File::open(&chunk_path)?;
+                self.current_reader = Some(std::io::BufReader::new(file));
+            } else {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    format!("分块文件缺失: {} (hash: {})", chunk_path.display(), hash),
+                ));
+            }
+        }
+    }
 }
 
 fn compare_archive_order(a: &Archive, b: &Archive) -> std::cmp::Ordering {
@@ -565,7 +628,7 @@ impl ArchiveService {
         db::update_archive(&self.pool, archive_id, note, &tags)
     }
 
-    /// 对比两个存档
+    /// 对比两个存档（使用流式读取，避免大文件内存问题）
     pub fn compare_archives(
         &self,
         id1: &str,
@@ -576,20 +639,25 @@ impl ArchiveService {
         let chunks1 = db::get_archive_chunks(&self.pool, id1)?;
         let chunks2 = db::get_archive_chunks(&self.pool, id2)?;
 
-        let bytes1 = self.read_chunks_as_bytes(&chunks1)?;
-        let bytes2 = self.read_chunks_as_bytes(&chunks2)?;
-
-        // 检测文件类型，对二进制文件做字节级比较而非文本 diff
-        let file_type = detect_file_type(&archive1.file_path, &bytes1);
-        let is_binary = matches!(
-            file_type,
-            FileType::Binary { .. }
-                | FileType::Image { .. }
-                | FileType::Pdf { .. }
-        );
+        // 检测文件类型（仅需路径扩展名，不需要完整数据）
+        let ext = std::path::Path::new(&archive1.file_path)
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_lowercase();
+        let binary_exts = [
+            "zip", "tar", "gz", "7z", "rar", "bz2", "xz", "zst", "exe", "dll",
+            "so", "dylib", "o", "a", "lib", "class", "jar", "war", "ear", "doc",
+            "docx", "xls", "xlsx", "ppt", "pptx", "mp3", "mp4", "avi", "mkv",
+            "mov", "wmv", "flv", "wav", "flac", "ogg", "aac", "wma", "m4a", "ttf",
+            "otf", "woff", "woff2", "eot", "sqlite", "db", "pdf", "png", "jpg",
+            "jpeg", "gif", "bmp", "webp", "ico", "tiff", "tif", "dxf", "dwg",
+        ];
+        let is_binary = binary_exts.contains(&ext.as_str());
 
         if is_binary {
-            let identical = bytes1 == bytes2;
+            // 流式哈希比较，无需将两个完整文件加载到内存
+            let identical = self.stream_chunks_equal(&chunks1, &chunks2)?;
             if identical {
                 return Ok(diff::DiffResult {
                     hunks: vec![],
@@ -600,6 +668,8 @@ impl ArchiveService {
                     },
                 });
             } else {
+                let (_, size1) = self.stream_chunks_hash(&chunks1)?;
+                let (_, size2) = self.stream_chunks_hash(&chunks2)?;
                 return Ok(diff::DiffResult {
                     hunks: vec![diff::DiffHunk {
                         old_start: 1,
@@ -611,7 +681,7 @@ impl ArchiveService {
                                 change_type: "delete".to_string(),
                                 content: format!(
                                     "[二进制文件] {} bytes",
-                                    bytes1.len()
+                                    size1
                                 ),
                                 old_line: Some(1),
                                 new_line: None,
@@ -620,7 +690,7 @@ impl ArchiveService {
                                 change_type: "add".to_string(),
                                 content: format!(
                                     "[二进制文件] {} bytes",
-                                    bytes2.len()
+                                    size2
                                 ),
                                 old_line: None,
                                 new_line: Some(1),
@@ -636,7 +706,12 @@ impl ArchiveService {
             }
         }
 
+        // 文本文件：需要完整内容进行 diff，但使用流式 reader 逐块读取
+        let bytes1 = self.read_chunks_as_bytes(&chunks1)?;
         let text1 = detect_and_convert_encoding(&bytes1);
+        // 释放第一个文件的原始字节，再加载第二个
+        drop(bytes1);
+        let bytes2 = self.read_chunks_as_bytes(&chunks2)?;
         let text2 = detect_and_convert_encoding(&bytes2);
 
         Ok(diff::compute_diff(&text1, &text2))
@@ -728,37 +803,152 @@ impl ArchiveService {
         &self,
         chunk_hashes: &[String],
     ) -> Result<String, AppError> {
-        let content = self.read_chunks_as_bytes(chunk_hashes)?;
-        Ok(detect_and_convert_encoding(&content))
+        // 流式读取：通过 ChunksReader 逐块读取，避免全部加载到内存
+        let mut reader = ChunksReader::new(&self.chunks_dir, chunk_hashes);
+        let mut raw_content = Vec::new();
+        reader.read_to_end(&mut raw_content).map_err(|e| {
+            AppError::Other(format!("读取 chunks 失败: {}", e))
+        })?;
+        Ok(detect_and_convert_encoding(&raw_content))
     }
 
-    /// 读取 chunks 为原始字节
+    /// 读取 chunks 为原始字节（使用流式 reader，逐块读取）
     fn read_chunks_as_bytes(
         &self,
         chunk_hashes: &[String],
     ) -> Result<Vec<u8>, AppError> {
+        let mut reader = ChunksReader::new(&self.chunks_dir, chunk_hashes);
         let mut content = Vec::new();
-        for hash in chunk_hashes {
-            if hash.len() < 2 {
-                tracing::warn!("Skipping chunk with invalid hash: {}", hash);
-                continue;
-            }
-            let chunk_path = self.chunks_dir.join(&hash[..2]).join(hash);
-            if chunk_path.exists() {
-                let data = std::fs::read(&chunk_path)?;
-                content.extend_from_slice(&data);
-            } else {
-                return Err(AppError::Other(format!(
-                    "分块文件缺失: {} (hash: {})",
-                    chunk_path.display(),
-                    hash
-                )));
-            }
-        }
+        reader.read_to_end(&mut content).map_err(|e| {
+            AppError::Other(format!("读取 chunks 失败: {}", e))
+        })?;
         Ok(content)
     }
 
-    /// 增强差异对比
+    /// 流式计算 chunks 的 SHA256 哈希，无需将整个文件加载到内存
+    fn stream_chunks_hash(
+        &self,
+        chunk_hashes: &[String],
+    ) -> Result<(String, u64), AppError> {
+        let mut reader = ChunksReader::new(&self.chunks_dir, chunk_hashes);
+        let mut hasher = Sha256::new();
+        let mut buf = [0u8; 8192];
+        let mut total_size: u64 = 0;
+        loop {
+            let n = reader.read(&mut buf).map_err(|e| {
+                AppError::Other(format!("流式读取 chunks 失败: {}", e))
+            })?;
+            if n == 0 {
+                break;
+            }
+            hasher.update(&buf[..n]);
+            total_size += n as u64;
+        }
+        Ok((format!("{:x}", hasher.finalize()), total_size))
+    }
+
+    /// 流式比较两个 chunks 集合是否内容相同（通过哈希比较，无需加载完整内容）
+    fn stream_chunks_equal(
+        &self,
+        chunks1: &[String],
+        chunks2: &[String],
+    ) -> Result<bool, AppError> {
+        let (hash1, size1) = self.stream_chunks_hash(chunks1)?;
+        let (hash2, size2) = self.stream_chunks_hash(chunks2)?;
+        Ok(hash1 == hash2 && size1 == size2)
+    }
+
+    /// 流式计算二进制文件的相似度（逐块比较重叠区域的字节）
+    fn stream_calculate_similarity(
+        &self,
+        chunks1: &[String],
+        chunks2: &[String],
+        size1: u64,
+        size2: u64,
+    ) -> Result<f64, AppError> {
+        if size1 == 0 && size2 == 0 {
+            return Ok(1.0);
+        }
+        let max_size = size1.max(size2) as f64;
+        let overlap = size1.min(size2) as usize;
+        if overlap == 0 {
+            return Ok(0.0);
+        }
+
+        let mut reader1 = ChunksReader::new(&self.chunks_dir, chunks1);
+        let mut reader2 = ChunksReader::new(&self.chunks_dir, chunks2);
+        let mut buf1 = [0u8; 8192];
+        let mut buf2 = [0u8; 8192];
+        let mut remaining = overlap;
+        let mut matching: u64 = 0;
+
+        while remaining > 0 {
+            let to_read = remaining.min(buf1.len());
+            let n1 = reader1.read(&mut buf1[..to_read]).map_err(|e| {
+                AppError::Other(format!("流式读取失败: {}", e))
+            })?;
+            let n2 = reader2.read(&mut buf2[..to_read]).map_err(|e| {
+                AppError::Other(format!("流式读取失败: {}", e))
+            })?;
+            if n1 == 0 || n2 == 0 {
+                break;
+            }
+            let n = n1.min(n2);
+            for i in 0..n {
+                if buf1[i] == buf2[i] {
+                    matching += 1;
+                }
+            }
+            remaining -= n;
+        }
+
+        Ok(matching as f64 / max_size)
+    }
+
+    /// 流式二进制比较（返回完整的 BinaryDiffResult，无需加载完整文件到内存）
+    fn stream_binary_compare(
+        &self,
+        chunks1: &[String],
+        chunks2: &[String],
+    ) -> Result<crate::diff::types::BinaryDiffResult, AppError> {
+        let (hash1, size1) = self.stream_chunks_hash(chunks1)?;
+        let (hash2, size2) = self.stream_chunks_hash(chunks2)?;
+        let identical = hash1 == hash2 && size1 == size2;
+        let size_change = size2 as i64 - size1 as i64;
+
+        let similarity = if identical {
+            1.0
+        } else {
+            self.stream_calculate_similarity(chunks1, chunks2, size1, size2)?
+        };
+
+        let summary = if identical {
+            "文件内容完全相同".to_string()
+        } else {
+            let change_str = if size_change > 0 {
+                format!("+{} bytes", size_change)
+            } else {
+                format!("{} bytes", size_change)
+            };
+            format!(
+                "文件已修改，大小变化: {} ({} → {} bytes)",
+                change_str, size1, size2
+            )
+        };
+
+        Ok(crate::diff::types::BinaryDiffResult {
+            identical,
+            size_change,
+            old_size: size1,
+            new_size: size2,
+            old_hash: hash1,
+            new_hash: hash2,
+            similarity,
+            summary,
+        })
+    }
+
+    /// 增强差异对比（使用流式读取，避免大文件内存问题）
     pub fn compare_archives_enhanced(
         &self,
         id1: &str,
@@ -774,19 +964,19 @@ impl ArchiveService {
         let chunks1 = db::get_archive_chunks(&self.pool, id1)?;
         let chunks2 = db::get_archive_chunks(&self.pool, id2)?;
 
-        // 3. 恢复文件内容
-        let old_content = self.read_chunks_as_bytes(&chunks1)?;
-        let new_content = self.read_chunks_as_bytes(&chunks2)?;
-
-        // 4. 检测文件类型
+        // 3. 检测文件类型（仅需路径扩展名）
         let file_path = &archive1.file_path;
-        let file_type = detect_file_type(file_path, &old_content);
+        let file_type = detect_file_type(file_path, &[]);
 
-        // 5. 根据类型执行差异计算
+        // 4. 根据类型执行差异计算
         match &file_type {
             FileType::Text { .. } => {
-                // 文本文件：完整差异
+                // 文本文件：需要完整内容进行 diff，逐块流式读取
+                let old_content = self.read_chunks_as_bytes(&chunks1)?;
                 let old_text = detect_and_convert_encoding(&old_content);
+                // 释放第一个文件的原始字节再加载第二个
+                drop(old_content);
+                let new_content = self.read_chunks_as_bytes(&chunks2)?;
                 let new_text = detect_and_convert_encoding(&new_content);
 
                 let diff_result = diff::compute_diff(&old_text, &new_text);
@@ -805,12 +995,8 @@ impl ArchiveService {
                 })
             }
             _ => {
-                // 二进制文件：简单比对
-                let binary_diff =
-                    crate::diff::engine::BinaryDiffEngine::compare(
-                        &old_content,
-                        &new_content,
-                    )?;
+                // 二进制文件：流式比较，无需加载完整文件到内存
+                let binary_diff = self.stream_binary_compare(&chunks1, &chunks2)?;
 
                 Ok(EnhancedDiffResult {
                     diff_result: diff::DiffResult {
