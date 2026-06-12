@@ -104,7 +104,10 @@ pub fn run() {
     let data_dir = dirs_next::data_local_dir()
         .unwrap_or_else(|| std::path::PathBuf::from("."))
         .join("docdist");
-    std::fs::create_dir_all(&data_dir).ok();
+    if let Err(e) = std::fs::create_dir_all(&data_dir) {
+        eprintln!("警告: 无法创建数据目录 {:?}: {}", data_dir, e);
+        // 继续运行，后续操作可能会失败，但不应在此处 panic
+    }
 
     // 加载配置
     let app_config = AppConfig::load(&data_dir);
