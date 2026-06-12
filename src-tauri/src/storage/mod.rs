@@ -62,6 +62,13 @@ pub fn store_file(
         }
 
         file_hasher.update(&read_buffer[..n]);
+        // TODO(perf): 逐字节处理在大文件上存在性能瓶颈。
+        // 每个字节都需要调用 update_rolling_hash + should_cut_chunk，
+        // 函数调用开销在热路径上累积显著。
+        // 优化方向：
+        //   1. 将滚动窗口计算改为 SIMD 批量处理
+        //   2. 预扫描 read_buffer 寻找 chunk 边界，避免逐字节函数调用
+        //   3. 使用 unsafe 直接索引避免 bounds check
         for &byte in &read_buffer[..n] {
             file_size += 1;
             chunk.push(byte);
