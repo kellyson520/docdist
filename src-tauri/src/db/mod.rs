@@ -272,33 +272,6 @@ pub fn get_all_archives(
     Ok(archives)
 }
 
-/// 一次性加载所有存档并按 parent_id 分组（用于树构建，避免 N+1 查询）
-#[allow(dead_code)]
-pub fn get_all_archives_grouped_by_parent(
-    pool: &DbPool,
-) -> Result<
-    std::collections::HashMap<String, Vec<Archive>>,
-    crate::error::AppError,
-> {
-    let conn = pool.get()?;
-    let mut stmt = conn.prepare(&format!(
-        "SELECT {} FROM archives ORDER BY created_at",
-        SELECT_FIELDS
-    ))?;
-    let rows = stmt.query_map([], row_to_archive)?;
-    let mut map: std::collections::HashMap<String, Vec<Archive>> =
-        std::collections::HashMap::new();
-    for row in rows {
-        let archive = row.map_err(|e| {
-            tracing::warn!("Failed to read archive row: {}", e);
-            crate::error::AppError::Db(e)
-        })?;
-        let parent_key = archive.parent_id.clone().unwrap_or_default();
-        map.entry(parent_key).or_default().push(archive);
-    }
-    Ok(map)
-}
-
 pub fn get_archive(
     pool: &DbPool,
     id: &str,
@@ -2239,38 +2212,4 @@ mod tests {
         assert!(results.is_empty());
     }
 
-    #[test]
-    fn test_get_all_archives_grouped_by_parent() {
-        let pool = setup_db();
-
-        let mut parent =
-            make_archive("grp_parent", "/docs/parent.pdf", "parent.pdf");
-        parent.parent_id = None;
-        insert_archive(&pool, &parent).unwrap();
-
-        let mut child1 =
-            make_archive("grp_child1", "/docs/child1.pdf", "child1.pdf");
-        child1.parent_id = Some("grp_parent".to_string());
-        insert_archive(&pool, &child1).unwrap();
-
-        let mut child2 =
-            make_archive("grp_child2", "/docs/child2.pdf", "child2.pdf");
-        child2.parent_id = Some("grp_parent".to_string());
-        insert_archive(&pool, &child2).unwrap();
-
-        let mut orphan =
-            make_archive("grp_orphan", "/docs/orphan.pdf", "orphan.pdf");
-        orphan.parent_id = None;
-        insert_archive(&pool, &orphan).unwrap();
-
-        let grouped = get_all_archives_grouped_by_parent(&pool).unwrap();
-
-        // parent_id=None 的应归入 "" 键
-        let roots = grouped.get("").unwrap();
-        assert_eq!(roots.len(), 2); // parent 和 orphan
-
-        // parent_id="grp_parent" 的应归入 "grp_parent" 键
-        let children = grouped.get("grp_parent").unwrap();
-        assert_eq!(children.len(), 2); // child1 和 child2
-    }
 }

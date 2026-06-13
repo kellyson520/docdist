@@ -103,61 +103,6 @@ impl FileWatcher {
         self.max_file_size.store(max, Ordering::Relaxed);
     }
 
-    /// 设置自动存档回调
-    #[allow(dead_code)]
-    fn emit_event(&self, event: FileChangeEvent) {
-        if let Some(handle) = self
-            .event_sender
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .as_ref()
-        {
-            let _ = handle.emit_all("file-changed", &event);
-        }
-    }
-
-    /// 触发自动存档
-    #[allow(dead_code)]
-    fn trigger_auto_archive(&self, path: String) {
-        // 去重：同一文件在防抖窗口内只触发一次（带 TTL 过期）
-        {
-            let mut triggered = self
-                .triggered_paths
-                .lock()
-                .unwrap_or_else(|e| e.into_inner());
-            let now = Instant::now();
-            // 清理超过 2×debounce_duration 的过期条目
-            let ttl = Duration::from_millis(
-                self.debounce_ms.load(Ordering::Relaxed) * 2,
-            );
-            triggered.retain(|_, t| now.duration_since(*t) < ttl);
-            if triggered.contains_key(&path) {
-                return;
-            }
-            triggered.insert(path.clone(), now);
-        }
-
-        // 发送前端通知
-        let event = FileChangeEvent {
-            path: path.clone(),
-            event_type: "auto_archive_pending".to_string(),
-            timestamp: chrono::Utc::now()
-                .format("%Y-%m-%d %H:%M:%S%.3f")
-                .to_string(),
-        };
-        self.emit_event(event);
-
-        // 调用自动存档回调
-        if let Some(cb) = self
-            .auto_archive_cb
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .as_ref()
-        {
-            cb(path);
-        }
-    }
-
     /// 清除已触发标记（存档完成后调用）
     pub fn clear_triggered(&self, path: &str) {
         self.triggered_paths
