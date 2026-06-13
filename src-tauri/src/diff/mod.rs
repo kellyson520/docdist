@@ -8,6 +8,7 @@ use similar::{ChangeTag, TextDiff};
 use tokio::sync::Semaphore;
 
 /// 最大并发解析数
+#[allow(dead_code)]
 const MAX_PARSE_CONCURRENCY: usize = 4;
 
 /// Number of unchanged context lines shown around each changed region.
@@ -169,6 +170,7 @@ fn build_hunk(changes: &[DiffChange]) -> DiffHunk {
 
 /// 单个文件解析结果
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct ParsedFileResult {
     pub path: String,
     pub text: Result<String, String>,
@@ -178,6 +180,7 @@ pub struct ParsedFileResult {
 ///
 /// 对于每个文件，通过 `parse_fn` 回调提取文本内容。
 /// 所有文件在 Tokio 异步上下文中并发解析，但同时活跃的任务数不超过上限。
+#[allow(dead_code)]
 pub async fn batch_parse_files<F>(
     files: Vec<(String, Vec<u8>)>,
     parse_fn: F,

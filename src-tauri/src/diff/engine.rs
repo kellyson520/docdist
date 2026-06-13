@@ -4,8 +4,10 @@ use crate::diff::types::BinaryDiffResult;
 use crate::error::AppError;
 use sha2::{Digest, Sha256};
 
+#[allow(dead_code)]
 pub struct BinaryDiffEngine;
 
+#[allow(dead_code)]
 impl BinaryDiffEngine {
     /// 比较两个二进制内容
     pub fn compare(
