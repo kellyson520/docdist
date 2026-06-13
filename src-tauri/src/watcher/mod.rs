@@ -201,9 +201,13 @@ impl FileWatcher {
                                     path.to_string_lossy().to_string();
 
                                 // 排除检查 — 按路径段匹配
-                                let patterns = exclude
-                                    .lock()
-                                    .unwrap_or_else(|e| e.into_inner());
+                                let patterns = match exclude.lock() {
+                                    Ok(guard) => guard,
+                                    Err(e) => {
+                                        tracing::warn!("Mutex poisoned in watcher callback (exclude): {}", e);
+                                        continue;
+                                    }
+                                };
                                 let should_skip =
                                     is_path_excluded(&path_str, &patterns);
                                 drop(patterns);
@@ -234,9 +238,13 @@ impl FileWatcher {
 
                                 // 防抖：记录变更时间
                                 {
-                                    let mut p = pending
-                                        .lock()
-                                        .unwrap_or_else(|e| e.into_inner());
+                                    let mut p = match pending.lock() {
+                                        Ok(guard) => guard,
+                                        Err(e) => {
+                                            tracing::warn!("Mutex poisoned in watcher callback (pending): {}", e);
+                                            continue;
+                                        }
+                                    };
                                     p.insert(path_str.clone(), Instant::now());
                                 }
 
@@ -285,7 +293,10 @@ impl FileWatcher {
             canonical_paths.push(canonical);
         }
 
-        *watched.lock().unwrap_or_else(|e| e.into_inner()) = canonical_paths;
+        *watched.lock().map_err(|e| {
+            tracing::warn!("Mutex poisoned in start(): {}", e);
+            crate::error::AppError::Other("内部状态错误".to_string())
+        })? = canonical_paths;
         self.watcher = Some(watcher);
 
         // 启动防抖处理线程 — 使用全新的 AtomicBool，避免旧线程因信号重置而复活

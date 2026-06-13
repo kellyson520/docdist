@@ -423,7 +423,10 @@ pub async fn open_external_diff(
     tool_path: Option<String>,
 ) -> Result<serde_json::Value, AppError> {
     let tool = {
-        let config = state.config.lock().unwrap_or_else(|e| e.into_inner());
+        let config = state.config.lock().map_err(|e| {
+            tracing::warn!("Mutex poisoned in external_diff: {}", e);
+            AppError::Other("内部状态错误，请重试".to_string())
+        })?;
         configured_external_diff_tool(&config, tool_path)?
     };
 
@@ -529,7 +532,10 @@ pub async fn start_watcher(
     paths: Vec<String>,
 ) -> Result<(), AppError> {
     let (debounce_secs, min_file_size, max_file_size) = {
-        let config = state.config.lock().unwrap_or_else(|e| e.into_inner());
+        let config = state.config.lock().map_err(|e| {
+            tracing::warn!("Mutex poisoned in start_watcher: {}", e);
+            AppError::Other("内部状态错误，请重试".to_string())
+        })?;
         (
             config.watcher.auto_archive_delay,
             config.watcher.min_file_size,
@@ -537,7 +543,10 @@ pub async fn start_watcher(
         )
     };
 
-    let mut watcher = state.watcher.lock().unwrap_or_else(|e| e.into_inner());
+    let mut watcher = state.watcher.lock().map_err(|e| {
+        tracing::warn!("Mutex poisoned in start_watcher: {}", e);
+        AppError::Other("内部状态错误，请重试".to_string())
+    })?;
     watcher
         .set_debounce_duration(std::time::Duration::from_secs(debounce_secs));
     watcher.set_file_size_range(min_file_size, max_file_size);
@@ -559,7 +568,10 @@ pub async fn start_watcher(
 
 #[tauri::command]
 pub async fn stop_watcher(state: State<'_, AppState>) -> Result<(), AppError> {
-    let mut watcher = state.watcher.lock().unwrap_or_else(|e| e.into_inner());
+    let mut watcher = state.watcher.lock().map_err(|e| {
+        tracing::warn!("Mutex poisoned in stop_watcher: {}", e);
+        AppError::Other("内部状态错误，请重试".to_string())
+    })?;
     watcher.stop();
     Ok(())
 }
@@ -580,7 +592,10 @@ pub async fn add_watcher_path(
     state: State<'_, AppState>,
     path: String,
 ) -> Result<(), AppError> {
-    let mut watcher = state.watcher.lock().unwrap_or_else(|e| e.into_inner());
+    let mut watcher = state.watcher.lock().map_err(|e| {
+        tracing::warn!("Mutex poisoned in add_watcher_path: {}", e);
+        AppError::Other("内部状态错误，请重试".to_string())
+    })?;
     watcher.add_path(path)
 }
 
@@ -589,7 +604,10 @@ pub async fn remove_watcher_path(
     state: State<'_, AppState>,
     path: String,
 ) -> Result<(), AppError> {
-    let mut watcher = state.watcher.lock().unwrap_or_else(|e| e.into_inner());
+    let mut watcher = state.watcher.lock().map_err(|e| {
+        tracing::warn!("Mutex poisoned in remove_watcher_path: {}", e);
+        AppError::Other("内部状态错误，请重试".to_string())
+    })?;
     watcher.remove_path(&path)
 }
 
@@ -692,7 +710,10 @@ pub async fn update_config(
 
     // 提取 watcher 配置副本，然后释放 config 锁再锁 watcher，避免交叉持锁
     let (exclude_patterns, debounce_secs, min_file_size, max_file_size) = {
-        let mut config = state.config.lock().unwrap_or_else(|e| e.into_inner());
+        let mut config = state.config.lock().map_err(|e| {
+            tracing::warn!("Mutex poisoned in update_config: {}", e);
+            AppError::Other("内部状态错误，请重试".to_string())
+        })?;
         *config = new_config;
         (
             config.watcher.exclude_patterns.clone(),
@@ -702,7 +723,10 @@ pub async fn update_config(
         )
     };
     // config 锁已释放，安全获取 watcher 锁
-    let mut watcher = state.watcher.lock().unwrap_or_else(|e| e.into_inner());
+    let mut watcher = state.watcher.lock().map_err(|e| {
+        tracing::warn!("Mutex poisoned in update_config (watcher): {}", e);
+        AppError::Other("内部状态错误，请重试".to_string())
+    })?;
     watcher.set_exclude_patterns(exclude_patterns);
     watcher
         .set_debounce_duration(std::time::Duration::from_secs(debounce_secs));
