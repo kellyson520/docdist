@@ -5,6 +5,10 @@ pub mod types; // 预留，T4 会创建 engine.rs
 
 use serde::{Deserialize, Serialize};
 use similar::{ChangeTag, TextDiff};
+use tokio::sync::Semaphore;
+
+/// 最大并发解析数
+const MAX_PARSE_CONCURRENCY: usize = 4;
 
 /// Number of unchanged context lines shown around each changed region.
 const HUNK_CONTEXT_LINES: usize = 3;
@@ -161,6 +165,57 @@ fn build_hunk(changes: &[DiffChange]) -> DiffHunk {
         new_lines,
         changes: changes.to_vec(),
     }
+}
+
+/// 单个文件解析结果
+#[derive(Debug)]
+pub struct ParsedFileResult {
+    pub path: String,
+    pub text: Result<String, String>,
+}
+
+/// 批量解析文件，使用 Semaphore 限制并发数（最大 MAX_PARSE_CONCURRENCY）。
+///
+/// 对于每个文件，通过 `parse_fn` 回调提取文本内容。
+/// 所有文件在 Tokio 异步上下文中并发解析，但同时活跃的任务数不超过上限。
+pub async fn batch_parse_files<F>(
+    files: Vec<(String, Vec<u8>)>,
+    parse_fn: F,
+) -> Vec<ParsedFileResult>
+where
+    F: Fn(&[u8]) -> Result<String, String> + Send + Sync + 'static,
+{
+    let semaphore = std::sync::Arc::new(Semaphore::new(MAX_PARSE_CONCURRENCY));
+    let parse_fn = std::sync::Arc::new(parse_fn);
+    let mut handles = Vec::with_capacity(files.len());
+
+    for (path, data) in files {
+        let sem = semaphore.clone();
+        let parser = parse_fn.clone();
+        let handle = tokio::spawn(async move {
+            let _permit = sem
+                .acquire()
+                .await
+                .expect("Semaphore closed unexpectedly");
+            let text = tokio::task::spawn_blocking(move || parser(&data))
+                .await
+                .unwrap_or_else(|e| Err(format!("任务执行失败: {}", e)));
+            ParsedFileResult { path, text }
+        });
+        handles.push(handle);
+    }
+
+    let mut results = Vec::with_capacity(handles.len());
+    for handle in handles {
+        match handle.await {
+            Ok(result) => results.push(result),
+            Err(e) => results.push(ParsedFileResult {
+                path: String::new(),
+                text: Err(format!("任务 join 失败: {}", e)),
+            }),
+        }
+    }
+    results
 }
 
 #[cfg(test)]
