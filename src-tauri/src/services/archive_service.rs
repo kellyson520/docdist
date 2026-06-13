@@ -884,12 +884,12 @@ impl ArchiveService {
 
         while remaining > 0 {
             let to_read = remaining.min(buf1.len());
-            let n1 = reader1.read(&mut buf1[..to_read]).map_err(|e| {
-                AppError::Other(format!("流式读取失败: {}", e))
-            })?;
-            let n2 = reader2.read(&mut buf2[..to_read]).map_err(|e| {
-                AppError::Other(format!("流式读取失败: {}", e))
-            })?;
+            let n1 = reader1
+                .read(&mut buf1[..to_read])
+                .map_err(|e| AppError::Other(format!("流式读取失败: {}", e)))?;
+            let n2 = reader2
+                .read(&mut buf2[..to_read])
+                .map_err(|e| AppError::Other(format!("流式读取失败: {}", e)))?;
             if n1 == 0 || n2 == 0 {
                 break;
             }
@@ -996,7 +996,8 @@ impl ArchiveService {
             }
             _ => {
                 // 二进制文件：流式比较，无需加载完整文件到内存
-                let binary_diff = self.stream_binary_compare(&chunks1, &chunks2)?;
+                let binary_diff =
+                    self.stream_binary_compare(&chunks1, &chunks2)?;
 
                 Ok(EnhancedDiffResult {
                     diff_result: diff::DiffResult {
