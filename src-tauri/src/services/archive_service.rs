@@ -75,7 +75,11 @@ impl<'a> Read for ChunksReader<'a> {
             } else {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::NotFound,
-                    format!("分块文件缺失: {} (hash: {})", chunk_path.display(), hash),
+                    format!(
+                        "分块文件缺失: {} (hash: {})",
+                        chunk_path.display(),
+                        hash
+                    ),
                 ));
             }
         }
@@ -647,11 +651,12 @@ impl ArchiveService {
             .to_lowercase();
         let binary_exts = [
             "zip", "tar", "gz", "7z", "rar", "bz2", "xz", "zst", "exe", "dll",
-            "so", "dylib", "o", "a", "lib", "class", "jar", "war", "ear", "doc",
-            "docx", "xls", "xlsx", "ppt", "pptx", "mp3", "mp4", "avi", "mkv",
-            "mov", "wmv", "flv", "wav", "flac", "ogg", "aac", "wma", "m4a", "ttf",
-            "otf", "woff", "woff2", "eot", "sqlite", "db", "pdf", "png", "jpg",
-            "jpeg", "gif", "bmp", "webp", "ico", "tiff", "tif", "dxf", "dwg",
+            "so", "dylib", "o", "a", "lib", "class", "jar", "war", "ear",
+            "doc", "docx", "xls", "xlsx", "ppt", "pptx", "mp3", "mp4", "avi",
+            "mkv", "mov", "wmv", "flv", "wav", "flac", "ogg", "aac", "wma",
+            "m4a", "ttf", "otf", "woff", "woff2", "eot", "sqlite", "db", "pdf",
+            "png", "jpg", "jpeg", "gif", "bmp", "webp", "ico", "tiff", "tif",
+            "dxf", "dwg",
         ];
         let is_binary = binary_exts.contains(&ext.as_str());
 
@@ -806,9 +811,9 @@ impl ArchiveService {
         // 流式读取：通过 ChunksReader 逐块读取，避免全部加载到内存
         let mut reader = ChunksReader::new(&self.chunks_dir, chunk_hashes);
         let mut raw_content = Vec::new();
-        reader.read_to_end(&mut raw_content).map_err(|e| {
-            AppError::Other(format!("读取 chunks 失败: {}", e))
-        })?;
+        reader
+            .read_to_end(&mut raw_content)
+            .map_err(|e| AppError::Other(format!("读取 chunks 失败: {}", e)))?;
         Ok(detect_and_convert_encoding(&raw_content))
     }
 
@@ -819,9 +824,9 @@ impl ArchiveService {
     ) -> Result<Vec<u8>, AppError> {
         let mut reader = ChunksReader::new(&self.chunks_dir, chunk_hashes);
         let mut content = Vec::new();
-        reader.read_to_end(&mut content).map_err(|e| {
-            AppError::Other(format!("读取 chunks 失败: {}", e))
-        })?;
+        reader
+            .read_to_end(&mut content)
+            .map_err(|e| AppError::Other(format!("读取 chunks 失败: {}", e)))?;
         Ok(content)
     }
 

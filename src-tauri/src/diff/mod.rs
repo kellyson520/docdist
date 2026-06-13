@@ -193,10 +193,8 @@ where
         let sem = semaphore.clone();
         let parser = parse_fn.clone();
         let handle = tokio::spawn(async move {
-            let _permit = sem
-                .acquire()
-                .await
-                .expect("Semaphore closed unexpectedly");
+            let _permit =
+                sem.acquire().await.expect("Semaphore closed unexpectedly");
             let text = tokio::task::spawn_blocking(move || parser(&data))
                 .await
                 .unwrap_or_else(|e| Err(format!("任务执行失败: {}", e)));
